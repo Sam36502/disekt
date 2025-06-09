@@ -1,4 +1,5 @@
-bin/
-obj/
-dumps/*
-disks/*
+.gitignore
+bin
+obj
+dumps
+disks
