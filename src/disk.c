@@ -66,7 +66,7 @@ char *DSK_GetDescription(DSK_BAM bam) {
 	int last_space = 0;
 	for (int i=0; i<DIR_HEADER_SIZE && bam.dir_header[i] != '\0'; i++) {
 		char c = bam.dir_header[i];
-		if ((uint8_t) c == 0xA0) c = ' ';
+		if ((uint8_t) c == 0xA0) c = 0x00;
 		if (c == ' ') {
 			if (bi == 0) continue;
 			last_space = bi;
