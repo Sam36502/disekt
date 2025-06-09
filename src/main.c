@@ -1,30 +1,21 @@
 
 #include <stdio.h>
+#include <ctype.h>
+#include <string.h>
 #include <stdbool.h>
 #include <raylib.h>
 
 #include "../include/debug.h"
-//#include "../include/arc.h"
-
 #include "../include/disk.h"
-//#include "../include/recon.h"
-//#include "../include/nyblog.h"
 
-#define EVENT_TIMEOUT 10	// ms
 #define FRAMERATE 30		// FPS
-
-#define BLOCK_SIZE 0x100	// Size of a disk sector (block) in bytes
-#define BAM_ADDRESS 0x16500	// Offset in bytes from the start of a disk to the BAM
 
 #define SCREEN_WIDTH 1600
 #define SCREEN_HEIGHT 1000
 
-#define CLR_BACKGROUND	0xFF, 0xFF, 0xFF		// White
-#define CLR_SECT_FREE	0x00, 0x00, 0x00		// Black
-#define CLR_SECT_FULL	0xFF, 0x20, 0x10		// Red
 
-//void err_msg(const char *msg);
 void usage();
+
 
 int main(int argc, char *argv[]) {
 
@@ -81,7 +72,8 @@ int main(int argc, char *argv[]) {
 
 	// Main Loop
 	bool redraw = true;
-	DSK_Position selected_sector = POSITION_BAM;
+	DSK_Position curr_sector = DSK_POSITION_BAM;
+	char *name = DSK_GetName(bam);
 
 	while (!WindowShouldClose()) {
 
@@ -92,28 +84,113 @@ int main(int argc, char *argv[]) {
 			BeginDrawing();
 
 			// Clear Background
-			ClearBackground(WHITE);
+			ClearBackground(RAYWHITE);
 			DSK_Position hov = DSK_GetHoveredSector();
+			if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) curr_sector = hov;
 
+			// Draw Disk-Sectors
 			for (int t=1; t<=35; t++) {
 				for (int s=0; s<21; s++) {
 					DSK_Position pos = { t, s };
+					DSK_DrawMode dm = DSK_DRAW_NORMAL;
 
-					if (pos.track == hov.track && pos.sector == hov.sector) {
-						DSK_Sector_Highlight(bam, hov);
-					} else {
-						DSK_Sector_Draw(bam, pos);
-					}
+					if (pos.track == hov.track && pos.sector == hov.sector) dm = DSK_DRAW_HIGHLIGHT;
+					if (pos.track == curr_sector.track && pos.sector == curr_sector.sector) dm = DSK_DRAW_SELECTED;
 
+					DSK_Sector_Draw(bam, pos, dm);
 				}
 			}
+			// Draw Title
+			char buf[256];
+			snprintf(buf, 256, "%s", name);
+			DrawText(buf, 10, 10, 20, RED);
+			snprintf(buf, 256, "\"%s\"", argv[1]);
+			DrawText(buf, 10, 30, 20, BLACK);
+
+			// Draw Currently selected sector pos & hovered sector pos
+			snprintf(buf, 256, "[% 3i/% 3i]", curr_sector.track, curr_sector.sector);
+			DrawText(buf, 10, SCREEN_HEIGHT - 10 - 20, 20, ORANGE);
+			snprintf(buf, 256, "[% 3i/% 3i]", hov.track, hov.sector);
+			DrawText(buf, 10 + (9 * 12), SCREEN_HEIGHT - 10 - 20, 20, BLACK);
 
 
-			//DrawRing((Vector2){ 500.0f, 400.0f },
-			//		20.0f, 220.0f,
-			//		0.0f, (360.0f / 100.0f) * g_debug_int,
-			//		ARC_RESOLUTION, RED
-			//);
+			// Draw Sector Info
+			DSK_SectorInfo info = DSK_Sector_GetFullInfo(bam, f_disk, curr_sector); 
+			const int info_x = DISK_CENTRE_X * 2;
+			const int info_tab_x = info_x + (16 * 12);
+			DrawLineEx(
+				(Vector2){ info_x, 10 },
+				(Vector2){ info_x, SCREEN_HEIGHT - 10 },
+				2.0f, BLACK
+			);
+			DrawLineEx(
+				(Vector2){ info_x + 10, 10 + 26 },
+				(Vector2){ SCREEN_WIDTH - 10, 10 + 26 },
+				2.0f, BLACK
+			);
+
+			int line_num = 0;
+			snprintf(buf, 256, "Current Sector Info:");
+			DrawText(buf, info_x + 10, 10 + (line_num++ * 20), 20, BLACK);
+			line_num++;
+
+			snprintf(buf, 256, "% 16s", "Sector Type:");
+			DrawText(buf, info_x + 10, 10 + (line_num * 20), 20, BLACK);
+			snprintf(buf, 256, "%s", DSK_Sector_GetTypeName(info.type));
+			DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, ORANGE);
+
+			snprintf(buf, 256, "% 16s", "Sector Status:");
+			DrawText(buf, info_x + 10, 10 + (line_num * 20), 20, BLACK);
+			snprintf(buf, 256, "%s", DSK_Sector_GetStatusName(info.status));
+			DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, DSK_Sector_GetStatusColour(info.status));
+
+			// Draw specific sector info
+			line_num = 10;
+			switch (info.type) {
+				case SECTYPE_BAM: {
+					snprintf(buf, 256, "Full Directory Header:");
+					DrawText(buf, info_x + 10, 10 + (line_num++ * 20), 20, ORANGE);
+					line_num++;
+
+					for (int i=0; i<DIR_HEADER_SIZE; i++) {
+						int bi = i & 0b1111;
+
+						int c = bam.dir_header[i];
+						Color clr = BLACK;
+						if (isspace(c) || !isprint(c)) {
+							clr = LIGHTGRAY;
+							if (isspace(c)) c = '.';
+						}
+
+						if (bi == 0) {
+							DrawTextCodepoint(GetFontDefault(), '|',
+								(Vector2){ info_x + 10, 10 + (line_num * 20) },
+								20, BLACK
+							);
+						}
+
+						DrawTextCodepoint(GetFontDefault(), c,
+							(Vector2){ info_x + 20 + (bi * 20), 10 + (line_num * 20) },
+							20, clr
+						);
+
+						if (bi == 15) {
+							DrawTextCodepoint(GetFontDefault(), '|',
+								(Vector2){ info_x + 20 + (16 * 20), 10 + (line_num++ * 20) },
+								20, BLACK
+							);
+						}
+					}
+
+					DrawTextCodepoint(GetFontDefault(), '|',
+						(Vector2){ info_x + 20 + (16 * 20), 10 + (line_num++ * 20) },
+						20, BLACK
+					);
+
+				} break;
+				default: break;
+			}
+
 
 			DEBUG_DrawDevInfo();
 

@@ -22,11 +22,18 @@
 #define DISK_RADIUS 450		// in px
 #define DISK_CENTRE_X 500	// Disk centre pos
 #define DISK_CENTRE_Y 500
+#define DIR_HEADER_SIZE 113	// From 144 to 256 plus null-terminator
 
 
 //	
 //	Struct Declarations
 //	
+
+typedef enum {
+	DSK_DRAW_NORMAL,
+	DSK_DRAW_HIGHLIGHT,
+	DSK_DRAW_SELECTED,
+} DSK_DrawMode;
 
 typedef struct {
 	uint8_t track;
@@ -36,15 +43,36 @@ typedef struct {
 typedef struct {
 	DSK_Position directory;
 	uint32_t entries[MAX_TRACKS];
+	char dir_header[DIR_HEADER_SIZE];
 } DSK_BAM;
-	
+
 typedef enum {
 	SECTOR_INVALID,
 	SECTOR_FREE,
 	SECTOR_IN_USE,
 } DSK_SectorStatus;
 
+typedef enum {
+	SECTYPE_INVALID = 0x00,
+	SECTYPE_NONE = 0x01,
+	SECTYPE_BAM = 0x02,
+	SECTYPE_DIR = 0x03,
+	SECTYPE_DEL = 0x80,
+	SECTYPE_SEQ = 0x81,
+	SECTYPE_PRG = 0x82,
+	SECTYPE_USR = 0x83,
+	SECTYPE_REL = 0x84,
+} DSK_SectorType;
+
+typedef struct {
+	DSK_SectorType type;
+	DSK_SectorStatus status;
+	uint16_t checksum_original;
+	uint16_t checksum_calculated;
+} DSK_SectorInfo;
+
 #define DSK_POSITION_BAM (DSK_Position){ 0x12, 0x00 }
+
 
 //	
 //	Function Declarations
@@ -74,13 +102,22 @@ int DSK_File_ParseBAM(FILE *f_disk, DSK_BAM *bam);
 //
 void DSK_PrintBAM(DSK_BAM bam);
 
-//	Draws a sector to the screen with its colour determined by its status
+//	Gets the full directory header text
 //
-void DSK_Sector_Draw(DSK_BAM bam, DSK_Position pos);
+// Internal buffer; do not `free` !
+// Replaces "shifted" spaces and trims leading/trailing spaces
+char *DSK_GetDescription(DSK_BAM bam);
 
-//	Draws bright lines around the outline of a sector
+//	Gets a disk name from the directory header
 //
-void DSK_Sector_Highlight(DSK_BAM bam, DSK_Position pos);
+// Internal buffer; do not `free` !
+// Limits the name to 17 chars trims and replaces shifted spaces
+char *DSK_GetName(DSK_BAM bam);
+
+//	Draws a sector to the screen
+//
+//
+void DSK_Sector_Draw(DSK_BAM bam, DSK_Position pos, DSK_DrawMode mode);
 
 //	Get the state of a sector according to the BAM
 //
@@ -95,8 +132,17 @@ const char *DSK_Sector_GetStatusName(DSK_SectorStatus status);
 //
 Color DSK_Sector_GetStatusColour(DSK_SectorStatus status);
 
+//	Gets all information for a certain sector
+//
+DSK_SectorInfo DSK_Sector_GetFullInfo(DSK_BAM bam, FILE *f_disk, DSK_Position pos);
+
+//	Get a constant string for the name of a sector-type
+//
+const char *DSK_Sector_GetTypeName(DSK_SectorType type);
+
 //	Gets the disk position of the sector the mouse is hovering over
 //
 DSK_Position DSK_GetHoveredSector();
+
 
 #endif

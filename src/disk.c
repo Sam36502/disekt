@@ -44,7 +44,7 @@ int DSK_File_ParseBAM(FILE *f_disk, DSK_BAM *bam) {
 	if (f_disk == NULL || bam == NULL) return 1;
 
 	// Seek to the position
-	DSK_File_SeekPosition(f_disk, POSITION_BAM);
+	DSK_File_SeekPosition(f_disk, DSK_POSITION_BAM);
 
 	// Read the BAM
 	char *magic_a;
@@ -52,7 +52,48 @@ int DSK_File_ParseBAM(FILE *f_disk, DSK_BAM *bam) {
 	fread(&magic_a, sizeof(char), 2, f_disk);
 	fread(&bam->entries, sizeof(uint32_t), MAX_TRACKS, f_disk);
 
+	// Read the rest into the header string
+	fread(bam->dir_header, sizeof(char), DIR_HEADER_SIZE-1, f_disk);
+
 	return 0;
+}
+
+char *DSK_GetDescription(DSK_BAM bam) {
+	static char buffer[128];
+	buffer[0] = '\0';
+
+	int bi = 0;
+	int last_space = 0;
+	for (int i=0; i<DIR_HEADER_SIZE && bam.dir_header[i] != '\0'; i++) {
+		char c = bam.dir_header[i];
+		if ((uint8_t) c == 0xA0) c = ' ';
+		if (c == ' ') {
+			if (bi == 0) continue;
+			last_space = bi;
+		}
+		buffer[bi++] = c;
+	}
+	if (last_space > 0) buffer[last_space] = '\0';
+
+	return buffer;
+}
+
+char *DSK_GetName(DSK_BAM bam) {
+	static char buffer[18];
+	buffer[0] = '\0';
+
+	char *full = DSK_GetDescription(bam);
+	int i = 0;
+	int last_space = 0;
+	while (i < 17 && full[i] != '\0') {
+		buffer[i] = full[i];
+		if (full[i] == ' ') last_space = i;
+		i++;
+	}
+	if (last_space == 0) last_space = i;
+	buffer[last_space] = '\0';
+
+	return buffer;
 }
 
 void DSK_PrintBAM(DSK_BAM bam) {
@@ -73,7 +114,7 @@ void DSK_PrintBAM(DSK_BAM bam) {
 	}
 }
 
-void DSK_Sector_Draw(DSK_BAM bam, DSK_Position pos) {
+void DSK_Sector_Draw(DSK_BAM bam, DSK_Position pos, DSK_DrawMode mode) {
 	if (!DSK_IsPositionValid(pos)) return;
 
 	int track_index = MAX_TRACKS - pos.track;
@@ -84,41 +125,46 @@ void DSK_Sector_Draw(DSK_BAM bam, DSK_Position pos) {
 	double start_angle = sector_angle * pos.sector - 90.0f;
 	double end_angle = start_angle + sector_angle - (1.0f/(float)(track_index+5) * SECTOR_GAPS);
 
-	DrawRing(
-		(Vector2){ DISK_CENTRE_X, DISK_CENTRE_Y },
-		r_inner, r_outer,
-		start_angle, end_angle,
-		ARC_RESOLUTION,
-		DSK_Sector_GetStatusColour(DSK_Sector_GetStatus(bam, pos))
-	);
-}
+	switch (mode) {
+		case DSK_DRAW_HIGHLIGHT:
+		case DSK_DRAW_NORMAL: {
+			DrawRing(
+				(Vector2){ DISK_CENTRE_X, DISK_CENTRE_Y },
+				r_inner, r_outer,
+				start_angle, end_angle,
+				ARC_RESOLUTION,
+				DSK_Sector_GetStatusColour(DSK_Sector_GetStatus(bam, pos))
+			);
 
-void DSK_Sector_Highlight(DSK_BAM bam, DSK_Position pos) {
-	if (!DSK_IsPositionValid(pos)) return;
+			if (mode == DSK_DRAW_HIGHLIGHT) {
+				DrawRing(
+					(Vector2){ DISK_CENTRE_X, DISK_CENTRE_Y },
+					r_inner, r_outer,
+					start_angle, end_angle,
+					ARC_RESOLUTION,
+					(Color){ 0xFF, 0xFF, 0xFF, 0x80 }
+				);
+			}
+		} return;
 
-	int track_index = MAX_TRACKS - pos.track;
-	int track_width = (DISK_RADIUS - SPINDLE_RADIUS)/MAX_TRACKS;
-	float r_inner = SPINDLE_RADIUS + track_width * track_index;
-	float r_outer = r_inner + track_width - TRACK_GAPS;
-	double sector_angle = 360.0f / (double)(DSK_Track_GetSectorCount(pos.track));
-	double start_angle = sector_angle * pos.sector - 90.0f;
-	double end_angle = start_angle + sector_angle - (1.0f/(float)(track_index+5) * SECTOR_GAPS);
+		case DSK_DRAW_SELECTED: {
+			DrawRing(
+				(Vector2){ DISK_CENTRE_X, DISK_CENTRE_Y },
+				r_inner, r_outer,
+				start_angle, end_angle,
+				ARC_RESOLUTION,
+				DSK_Sector_GetStatusColour(DSK_Sector_GetStatus(bam, pos))
 
-	DrawRing(
-		(Vector2){ DISK_CENTRE_X, DISK_CENTRE_Y },
-		r_inner, r_outer,
-		start_angle, end_angle,
-		ARC_RESOLUTION,
-		DSK_Sector_GetStatusColour(DSK_Sector_GetStatus(bam, pos))
-
-	);
-	DrawRing(
-		(Vector2){ DISK_CENTRE_X, DISK_CENTRE_Y },
-		r_inner + 2.0f, r_outer - 2.0f,
-		start_angle + 0.5f, end_angle - 0.5f,
-		ARC_RESOLUTION,
-		WHITE
-	);
+			);
+			DrawRing(
+				(Vector2){ DISK_CENTRE_X, DISK_CENTRE_Y },
+				r_inner + 2.0f, r_outer - 2.0f,
+				start_angle + 0.5f, end_angle - 0.5f,
+				ARC_RESOLUTION,
+				WHITE
+			);
+		} return;
+	}
 }
 
 DSK_SectorStatus DSK_Sector_GetStatus(DSK_BAM bam, DSK_Position pos) {
@@ -140,10 +186,52 @@ const char *DSK_Sector_GetStatusName(DSK_SectorStatus status) {
 
 Color DSK_Sector_GetStatusColour(DSK_SectorStatus status) {
 	switch (status) {
+		case SECTOR_INVALID: return MAGENTA;
 		case SECTOR_FREE: return BLACK;
 		case SECTOR_IN_USE: return GREEN;
 		default: return (Color){ 0x00, 0x00, 0x00, 0x00 };
 	}
+}
+
+DSK_SectorInfo DSK_Sector_GetFullInfo(DSK_BAM bam, FILE *f_disk, DSK_Position pos) {
+	DSK_SectorInfo info = {
+		.type = SECTYPE_INVALID,
+		.status = SECTOR_INVALID,
+		.checksum_original = 0x0000,
+		.checksum_calculated = 0xFFFF
+	};
+	if (f_disk == NULL) return info;
+
+	info.status = DSK_Sector_GetStatus(bam, pos);
+
+	//	TODO: Parse the Directory and sort out the disk structure
+	//	For now:
+	if (pos.track == 18) {
+		if (pos.sector == 0) info.type = SECTYPE_BAM;
+		else info.type = SECTYPE_DIR;
+	} else {
+		if (info.status == SECTOR_IN_USE) info.type = SECTYPE_USR;
+		if (info.status == SECTOR_FREE) info.type = SECTYPE_NONE;
+	}
+
+	//DSK_File_SeekPosition(f_disk, pos);
+
+	return info;
+}
+
+const char *DSK_Sector_GetTypeName(DSK_SectorType type) {
+	switch(type) {
+		case SECTYPE_INVALID: return "Invalid Sector Type";
+		case SECTYPE_NONE: return "-";
+		case SECTYPE_BAM: return "Block-Availability Map";
+		case SECTYPE_DIR: return "Directory Table";
+		case SECTYPE_DEL: return "Deleted Block";
+		case SECTYPE_SEQ: return "Sequential Data Block";
+		case SECTYPE_PRG: return "Program Block";
+		case SECTYPE_USR: return "User Data Block";
+		case SECTYPE_REL: return "Relative Data Block";
+	}
+	return "";
 }
 
 DSK_Position DSK_GetHoveredSector() {
@@ -180,3 +268,4 @@ DSK_Position DSK_GetHoveredSector() {
 		.sector = sec,
 	};
 }
+
