@@ -19,7 +19,7 @@ extern bool g_show_debug_view;
 //	Handles events that impact the debug variables
 //
 //	returns true if the screen should be redrawn
-bool DEBUG_HandleEvents();
+bool DEBUG_HandleEvents(int key);
 
 //	Draws debug info to the screen
 //

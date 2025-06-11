@@ -17,9 +17,9 @@ bool DSK_IsPositionValid(DSK_Position pos) {
 	return true;
 }
 
-void DSK_File_SeekPosition(FILE *f_disk, DSK_Position pos) {
-	if (f_disk == NULL) return;
-	if (!DSK_IsPositionValid(pos)) return;
+int DSK_File_SeekPosition(FILE *f_disk, DSK_Position pos) {
+	if (f_disk == NULL) return 1;
+	if (!DSK_IsPositionValid(pos)) return 2;
 
 	//printf("---> Postion: [% 3i/% 3i]\n", pos.track, pos.sector);
 
@@ -37,35 +37,120 @@ void DSK_File_SeekPosition(FILE *f_disk, DSK_Position pos) {
 	
 	fseek(f_disk, offset, SEEK_SET);
 
-	return;
+	return 0;
 }
 
-int DSK_File_ParseBAM(FILE *f_disk, DSK_BAM *bam) {
-	if (f_disk == NULL || bam == NULL) return 1;
+int DSK_File_GetData(FILE *f_disk, DSK_Position pos, void *buf, size_t bufsz) {
+	int err = DSK_File_SeekPosition(f_disk, pos);
+	if (err > 0) return err;
 
-	// Seek to the position
-	DSK_File_SeekPosition(f_disk, DSK_POSITION_BAM);
-
-	// Read the BAM
-	char *magic_a;
-	fread(&bam->directory, sizeof(DSK_Position), 1, f_disk);
-	fread(&magic_a, sizeof(char), 2, f_disk);
-	fread(&bam->entries, sizeof(uint32_t), MAX_TRACKS, f_disk);
-
-	// Read the rest into the header string
-	fread(bam->dir_header, sizeof(char), DIR_HEADER_SIZE-1, f_disk);
+	for (int i=0; i<BLOCK_SIZE && i<bufsz; i++) {
+		fread(buf + i, sizeof(uint8_t), 1, f_disk);
+	}
 
 	return 0;
 }
 
-char *DSK_GetDescription(DSK_BAM bam) {
+int DSK_File_ParseDirectory(FILE *f_disk, DSK_Directory *dir) {
+	if (f_disk == NULL || dir == NULL) return 1;
+
+	// Seek to track 18
+	DSK_File_SeekPosition(f_disk, DSK_POSITION_BAM);
+
+	// Read the BAM
+	char *magic_a;
+	DSK_Position next_pos;
+	fread(&next_pos, sizeof(DSK_Position), 1, f_disk);
+	fread(&magic_a, sizeof(char), 2, f_disk);
+	fread(&dir->bam.entries, sizeof(uint32_t), MAX_TRACKS, f_disk);
+
+	// Read the rest into the header string
+	fread(dir->header, sizeof(char), DIR_HEADER_SIZE-1, f_disk);
+
+	// Parse the directory blocks
+	dir->num_entries = 0;
+	while (DSK_IsPositionValid(next_pos)) {
+		DSK_File_SeekPosition(f_disk, next_pos);
+		fread(&next_pos, sizeof(DSK_Position), 1, f_disk);
+
+		uint8_t type;
+		int index = sizeof(DSK_Position);
+		while (index < BLOCK_SIZE) {
+			fread(&type, sizeof(uint8_t), 1, f_disk);
+			if (type == 0x00) break;
+			index += sizeof(uint8_t);
+
+			DSK_Position pos;
+			fread(&pos, sizeof(DSK_Position), 1, f_disk);
+			index += sizeof(DSK_Position);
+			if (!DSK_IsPositionValid(pos)) break;
+
+			uint8_t namebuf[16];
+			fread(&namebuf, sizeof(uint8_t), 16, f_disk);
+			index += sizeof(uint8_t) * 16;
+
+			// TODO: Handle rel-specific directory data?
+			//fread(NULL, sizeof(uint8_t), 9, f_disk);
+			fseek(f_disk, 9, SEEK_CUR);
+			index += sizeof(uint8_t) * 9;
+
+			uint16_t num_blocks;
+			fread(&num_blocks, sizeof(uint16_t), 1, f_disk);
+			index += sizeof(uint16_t);
+
+			dir->entries[dir->num_entries] = (DSK_DirEntry){
+				.filetype = type,
+				.pos = pos,
+				.block_count = num_blocks,
+			};
+
+			// Clean & Trim filename
+			int ni = 0;
+			int end = 0;
+			for (int i=0; i<16; i++) {
+				int c = namebuf[i];
+				if (!isprint(c)) continue;
+				if (isspace(c)) {
+					if (ni == 0) continue;
+					end = ni;
+				} else {
+					end = 0;
+				}
+				dir->entries[dir->num_entries].filename[ni++] = c;
+			}
+			if (end == 0) end = ni;
+			dir->entries[dir->num_entries].filename[end] = '\0';
+
+			dir->num_entries++;
+			fseek(f_disk, 2, SEEK_CUR); // Skip two bytes after each entry
+			index += 2;
+		}
+
+	}
+
+	return 0;
+}
+
+void DSK_PrintDirectory(DSK_Directory dir) {
+	printf("\n Disk directory contents:\n--------------------------\n");
+	for (int i=0; i<dir.num_entries; i++) {
+		DSK_DirEntry e = dir.entries[i];
+		printf(" % 4i: [% 3i/% 3i] (%s) \"%s\" contains %i blocks\n", i,
+			e.pos.track, e.pos.sector,
+			DSK_Sector_GetTypeName((DSK_SectorType) e.filetype), e.filename,
+			e.block_count
+		);
+	}
+}
+
+char *DSK_GetDescription(DSK_Directory dir) {
 	static char buffer[128];
 	buffer[0] = '\0';
 
 	int bi = 0;
 	int last_space = 0;
-	for (int i=0; i<DIR_HEADER_SIZE && bam.dir_header[i] != '\0'; i++) {
-		char c = bam.dir_header[i];
+	for (int i=0; i<DIR_HEADER_SIZE && dir.header[i] != '\0'; i++) {
+		char c = dir.header[i];
 		if ((uint8_t) c == 0xA0) c = 0x00;
 		if (c == ' ') {
 			if (bi == 0) continue;
@@ -78,11 +163,11 @@ char *DSK_GetDescription(DSK_BAM bam) {
 	return buffer;
 }
 
-char *DSK_GetName(DSK_BAM bam) {
+char *DSK_GetName(DSK_Directory dir) {
 	static char buffer[18];
 	buffer[0] = '\0';
 
-	char *full = DSK_GetDescription(bam);
+	char *full = DSK_GetDescription(dir);
 	int i = 0;
 	int last_space = 0;
 	while (i < 17 && full[i] != '\0') {
@@ -99,7 +184,6 @@ char *DSK_GetName(DSK_BAM bam) {
 void DSK_PrintBAM(DSK_BAM bam) {
 	printf(" BAM Contents:\n");
 	printf("---------------------------------\n");
-	printf(" Directory Postion: [% 3i/% 3i]\n", bam.directory.track, bam.directory.sector);
 	for (int i=0; i<MAX_TRACKS; i++) {
 		uint8_t sec_free = bam.entries[i] & 0xFF;
 		int sec_total = DSK_Track_GetSectorCount(i+1);
@@ -114,7 +198,7 @@ void DSK_PrintBAM(DSK_BAM bam) {
 	}
 }
 
-void DSK_Sector_Draw(DSK_BAM bam, DSK_Position pos, DSK_DrawMode mode) {
+void DSK_Sector_Draw(DSK_Directory dir, DSK_Position pos, DSK_DrawMode mode) {
 	if (!DSK_IsPositionValid(pos)) return;
 
 	int track_index = MAX_TRACKS - pos.track;
@@ -125,37 +209,28 @@ void DSK_Sector_Draw(DSK_BAM bam, DSK_Position pos, DSK_DrawMode mode) {
 	double start_angle = sector_angle * pos.sector - 90.0f;
 	double end_angle = start_angle + sector_angle - (1.0f/(float)(track_index+5) * SECTOR_GAPS);
 
+	DrawRing(
+		(Vector2){ DISK_CENTRE_X, DISK_CENTRE_Y },
+		r_inner, r_outer,
+		start_angle, end_angle,
+		ARC_RESOLUTION,
+		DSK_Sector_GetStatusColour(DSK_Sector_GetStatus(dir, pos))
+	);
+
 	switch (mode) {
-		case DSK_DRAW_HIGHLIGHT:
-		case DSK_DRAW_NORMAL: {
+		case DSK_DRAW_NORMAL: break;
+
+		case DSK_DRAW_HIGHLIGHT: {
 			DrawRing(
 				(Vector2){ DISK_CENTRE_X, DISK_CENTRE_Y },
 				r_inner, r_outer,
 				start_angle, end_angle,
 				ARC_RESOLUTION,
-				DSK_Sector_GetStatusColour(DSK_Sector_GetStatus(bam, pos))
+				(Color){ 0xFF, 0xFF, 0xFF, 0x80 }
 			);
-
-			if (mode == DSK_DRAW_HIGHLIGHT) {
-				DrawRing(
-					(Vector2){ DISK_CENTRE_X, DISK_CENTRE_Y },
-					r_inner, r_outer,
-					start_angle, end_angle,
-					ARC_RESOLUTION,
-					(Color){ 0xFF, 0xFF, 0xFF, 0x80 }
-				);
-			}
 		} return;
 
 		case DSK_DRAW_SELECTED: {
-			DrawRing(
-				(Vector2){ DISK_CENTRE_X, DISK_CENTRE_Y },
-				r_inner, r_outer,
-				start_angle, end_angle,
-				ARC_RESOLUTION,
-				DSK_Sector_GetStatusColour(DSK_Sector_GetStatus(bam, pos))
-
-			);
 			DrawRing(
 				(Vector2){ DISK_CENTRE_X, DISK_CENTRE_Y },
 				r_inner + 2.0f, r_outer - 2.0f,
@@ -164,13 +239,14 @@ void DSK_Sector_Draw(DSK_BAM bam, DSK_Position pos, DSK_DrawMode mode) {
 				WHITE
 			);
 		} return;
+
 	}
 }
 
-DSK_SectorStatus DSK_Sector_GetStatus(DSK_BAM bam, DSK_Position pos) {
+DSK_SectorStatus DSK_Sector_GetStatus(DSK_Directory dir, DSK_Position pos) {
 	if (!DSK_IsPositionValid(pos)) return SECTOR_INVALID;
 	
-	int is_free = (bam.entries[pos.track - 1] >> (8 + pos.sector)) & 1;
+	int is_free = (dir.bam.entries[pos.track - 1] >> (8 + pos.sector)) & 1;
 	if (is_free) return SECTOR_FREE;
 	else return SECTOR_IN_USE;
 }
@@ -193,7 +269,7 @@ Color DSK_Sector_GetStatusColour(DSK_SectorStatus status) {
 	}
 }
 
-DSK_SectorInfo DSK_Sector_GetFullInfo(DSK_BAM bam, FILE *f_disk, DSK_Position pos) {
+DSK_SectorInfo DSK_Sector_GetFullInfo(DSK_Directory dir, FILE *f_disk, DSK_Position pos) {
 	DSK_SectorInfo info = {
 		.type = SECTYPE_INVALID,
 		.status = SECTOR_INVALID,
@@ -202,7 +278,7 @@ DSK_SectorInfo DSK_Sector_GetFullInfo(DSK_BAM bam, FILE *f_disk, DSK_Position po
 	};
 	if (f_disk == NULL) return info;
 
-	info.status = DSK_Sector_GetStatus(bam, pos);
+	info.status = DSK_Sector_GetStatus(dir, pos);
 
 	//	TODO: Parse the Directory and sort out the disk structure
 	//	For now:
@@ -219,6 +295,7 @@ DSK_SectorInfo DSK_Sector_GetFullInfo(DSK_BAM bam, FILE *f_disk, DSK_Position po
 	return info;
 }
 
+//	TODO: Change my types and include "corpse" detection
 const char *DSK_Sector_GetTypeName(DSK_SectorType type) {
 	switch(type) {
 		case SECTYPE_INVALID: return "Invalid Sector Type";

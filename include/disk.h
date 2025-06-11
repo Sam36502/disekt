@@ -2,11 +2,11 @@
 #define DISK_H
 
 //	Helper functions for reading data from a C64 disk image
-//	Also reads my custom reconciliation format that includes metadata for each block
 
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <ctype.h>
 #include <raylib.h>
 
 #include "../include/debug.h"
@@ -23,10 +23,12 @@
 #define DISK_CENTRE_X 500	// Disk centre pos
 #define DISK_CENTRE_Y 500
 #define DIR_HEADER_SIZE 113	// From 144 to 256 plus null-terminator
+#define MAX_DIR_ENTRIES 256	// TODO: find actual number
+#define BLOCK_SIZE 0x100
 
 
 //	
-//	Struct Declarations
+//	Type Definitions
 //	
 
 typedef enum {
@@ -41,10 +43,22 @@ typedef struct {
 } DSK_Position;
 
 typedef struct {
-	DSK_Position directory;
 	uint32_t entries[MAX_TRACKS];
-	char dir_header[DIR_HEADER_SIZE];
 } DSK_BAM;
+
+typedef struct {
+	uint8_t filetype;
+	DSK_Position pos;
+	char filename[17];
+	uint16_t block_count;
+} DSK_DirEntry;
+
+typedef struct {
+	DSK_BAM bam;
+	char header[DIR_HEADER_SIZE];
+	DSK_DirEntry entries[MAX_DIR_ENTRIES];
+	int num_entries;
+} DSK_Directory;
 
 typedef enum {
 	SECTOR_INVALID,
@@ -89,40 +103,52 @@ bool DSK_IsPositionValid(DSK_Position pos);
 
 //	Seeks to the start of a given sector in a disk image file pointer
 //
-void DSK_File_SeekPosition(FILE *f_disk, DSK_Position pos);
+//	Returns 0 on success or
+//		1 - if f_disk is NULL
+//		2 - if pos is invalid
+int DSK_File_SeekPosition(FILE *f_disk, DSK_Position pos);
 
-//	Takes a disk file pointer and parses out the BAM
+//	Fetches an arbitrary block of data from a given sector
 //
-//	This function fseeks to the BAM
+int DSK_File_GetData(FILE *f_disk, DSK_Position pos, void *buf, size_t bufsz);
+
+//	Takes a disk file pointer and parses the Directory
+//
+//	This function fseeks to track 18 and will leave the file pointer
+//	wherever the end of the last directory block is
+//
 //	Returns 0 on success, otherwise:
 //		1 = Received NULL argument pointer
-int DSK_File_ParseBAM(FILE *f_disk, DSK_BAM *bam);
+int DSK_File_ParseDirectory(FILE *f_disk, DSK_Directory *dir);
 
 //	Prints out the contents of the BAM
 //
 void DSK_PrintBAM(DSK_BAM bam);
 
+//	Prints out the contents of the Directory
+//
+void DSK_PrintDirectory(DSK_Directory dir);
+
 //	Gets the full directory header text
 //
 // Internal buffer; do not `free` !
 // Replaces "shifted" spaces and trims leading/trailing spaces
-char *DSK_GetDescription(DSK_BAM bam);
+char *DSK_GetDescription(DSK_Directory dir);
 
 //	Gets a disk name from the directory header
 //
 // Internal buffer; do not `free` !
 // Limits the name to 17 chars trims and replaces shifted spaces
-char *DSK_GetName(DSK_BAM bam);
+char *DSK_GetName(DSK_Directory dir);
 
 //	Draws a sector to the screen
 //
-//
-void DSK_Sector_Draw(DSK_BAM bam, DSK_Position pos, DSK_DrawMode mode);
+void DSK_Sector_Draw(DSK_Directory dir, DSK_Position pos, DSK_DrawMode mode);
 
-//	Get the state of a sector according to the BAM
+//	Get the state of a sector according to the Directory
 //
 //	Returns SECTOR_INVALID if pos is invalid
-DSK_SectorStatus DSK_Sector_GetStatus(DSK_BAM bam, DSK_Position pos);
+DSK_SectorStatus DSK_Sector_GetStatus(DSK_Directory dir, DSK_Position pos);
 
 //	Gets a constant char pointer to the name of a sector status
 //	
@@ -134,7 +160,7 @@ Color DSK_Sector_GetStatusColour(DSK_SectorStatus status);
 
 //	Gets all information for a certain sector
 //
-DSK_SectorInfo DSK_Sector_GetFullInfo(DSK_BAM bam, FILE *f_disk, DSK_Position pos);
+DSK_SectorInfo DSK_Sector_GetFullInfo(DSK_Directory dir, FILE *f_disk, DSK_Position pos);
 
 //	Get a constant string for the name of a sector-type
 //

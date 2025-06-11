@@ -92,3 +92,49 @@ int NYB_ParseLog(const char *filename, NYB_DataBlock *block_buf, int buf_len) {
 
 	return 0;
 }
+
+int NYB_Meta_ReadBlock(FILE *f_meta, NYB_DataBlock *block) {
+	if (f_meta == NULL || block == NULL) return 1;
+
+	//	Parse File Header
+	fseek(f_meta, 0l, SEEK_SET);
+	uint32_t header[4];
+	size_t r = fread(header, sizeof(uint32_t), 4, f_meta);
+	if (r < sizeof(uint32_t) * 4) return 2;
+	if (header[0] != NYBLOG_BIN_MAGIC) return 2;
+
+	//long offs_data = header[1];
+
+	//	Read blocks until we find 
+	return 0;
+}
+
+int NYB_Meta_WriteBlock(FILE *f_meta, NYB_DataBlock *block) {
+	return 99;
+}
+
+int NYB_WriteToDiskImage(char *filename, NYB_DataBlock *block_buf, int buf_len) {
+	FILE * f_disk = fopen(filename, "ab");
+	if (f_disk == NULL) return 1;
+
+	for (int i=0; i<buf_len; i++) {
+		NYB_DataBlock block = block_buf[i];
+		if (block.track_num < 1 || block.track_num > 35) continue;
+
+		//printf("[% 5i] Writing Block (% 3i/% 3i); 0x%04X; Err#%i\n", i,
+		//	block.track_num, block.sector_index,
+		//	block.checksum, block.err_code
+		//);
+		//uint16_t chk = REC_Checksum(block.data);
+		//printf("       Recalculated checksum: 0x%04X [%s]\n", chk, (chk == block.checksum) ? "MATCH" : "FAIL");
+
+		DSK_File_SeekPosition(f_disk, (DSK_Position){ block.track_num, block.sector_index });
+		fwrite(block.data, sizeof(uint8_t), BLOCK_SIZE, f_disk);
+	}
+	DSK_File_SeekPosition(f_disk, (DSK_Position){ MAX_TRACKS, 17 });
+
+	fclose(f_disk);
+
+	return 0;
+}
+

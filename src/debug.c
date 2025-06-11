@@ -4,9 +4,11 @@
 int g_debug_int = 0;
 bool g_show_debug_view = 0;
 
-bool DEBUG_HandleEvents() {
-	int pressed = GetKeyPressed();
+static int __last_key = 0;
+
+bool DEBUG_HandleEvents(int pressed) {
 	//printf("---> Pressed char: '%c'\n", pressed);
+	if (pressed != 0) __last_key = pressed;
 
 	if (pressed == KEYCODE_DEBUG_INT_INC && g_debug_int < 100) { g_debug_int++; return true; }
 	if (pressed == KEYCODE_DEBUG_INT_DEC && g_debug_int > 0) { g_debug_int--; return true; }
@@ -91,10 +93,7 @@ void DEBUG_DrawDevInfo() {
 	DrawText(buf, 10, 70,  20, BLACK);
 
 	// Print last pressed key
-	static int last_key = 0;
-	int kc = GetKeyPressed();
-	if (kc != 0) last_key = kc;
-	sprintf(buf, "Last Keycode: %i\n", last_key);
+	sprintf(buf, "Last Keycode: %i\n", __last_key);
 	DrawText(buf, 10, 100,  20, MAROON);
 
 	sprintf(buf, "Debug int value: %i\n", g_debug_int);
