@@ -68,6 +68,8 @@ int main(int argc, char *argv[]) {
 	bool hex_mode = false;
 	DSK_Position curr_sector = DSK_POSITION_BAM;
 	char *name = DSK_GetName(dir);
+	REC_Analysis analysis;
+	REC_AnalyseDisk(f_disk, dir, &analysis);
 
 	uint8_t curr_data[BLOCK_SIZE];
 	DSK_File_GetData(f_disk, curr_sector, curr_data, BLOCK_SIZE);
@@ -107,8 +109,9 @@ int main(int argc, char *argv[]) {
 
 					if (pos.track == hov.track && pos.sector == hov.sector) dm = DSK_DRAW_HIGHLIGHT;
 					if (pos.track == curr_sector.track && pos.sector == curr_sector.sector) dm = DSK_DRAW_SELECTED;
-
-					DSK_Sector_Draw(dir, pos, dm);
+					
+					REC_Status stat = REC_GetStatus(analysis, pos);
+					DSK_Sector_Draw(dir, pos, dm, REC_GetStatusColour(stat));
 				}
 			}
 
@@ -131,7 +134,9 @@ int main(int argc, char *argv[]) {
 
 
 			// Draw Sector Info
-			DSK_SectorInfo info = DSK_Sector_GetFullInfo(dir, f_disk, curr_sector); 
+			//DSK_SectorInfo info = DSK_Sector_GetFullInfo(dir, f_disk, curr_sector); 
+			//REC_Entry info = REC_Get(dir, f_disk, curr_sector); 
+			REC_Status stat = REC_GetStatus(analysis, curr_sector); 
 			const int info_x = DISK_CENTRE_X * 2;
 			const int info_tab_x = info_x + (16 * 12);
 			DrawLineEx(
@@ -152,18 +157,18 @@ int main(int argc, char *argv[]) {
 
 			snprintf(buf, 256, "%16s", "Sector Type:");
 			DrawText(buf, info_x + 10, 10 + (line_num * 20), 20, BLACK);
-			snprintf(buf, 256, "%s", DSK_Sector_GetTypeName(info.type));
-			DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, ORANGE);
+			//snprintf(buf, 256, "%s", DSK_Sector_GetTypeName(info.type));
+			//DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, ORANGE);
 
 			snprintf(buf, 256, "%16s", "Sector Status:");
 			DrawText(buf, info_x + 10, 10 + (line_num * 20), 20, BLACK);
-			snprintf(buf, 256, "%s", DSK_Sector_GetStatusName(info.status));
-			DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, DSK_Sector_GetStatusColour(info.status));
+			snprintf(buf, 256, "%s", REC_GetStatusName(stat));
+			DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, REC_GetStatusColour(stat));
 
 			// Draw specific sector info
 			line_num = 10;
-			switch (info.type) {
-				case SECTYPE_BAM: {
+			if (curr_sector.track == 18 && curr_sector.sector == 0) {
+				//case SECTYPE_BAM: {
 					snprintf(buf, 256, "Full Directory Header:");
 					DrawText(buf, info_x + 20, 10 + (line_num++ * 20), 20, ORANGE);
 					line_num++;
@@ -173,8 +178,8 @@ int main(int argc, char *argv[]) {
 						dir.header, DIR_HEADER_SIZE,
 						hex_mode, false
 					);
-				} break;
-				default: break;
+				//} break;
+				//default: break;
 			}
 
 			// Display Sector contents

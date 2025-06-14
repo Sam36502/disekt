@@ -18,23 +18,30 @@
 //	
 
 typedef enum {
-	SECSTAT_MISSING = 0x00,
-	SECSTAT_EMPTY = 0x01,
-	SECSTAT_CORRUPT = 0x10,
-	SECSTAT_UNCONFIRMED = 0x11,
-	SECSTAT_CONFIRMED = 0x20,
-	SECSTAT_HEALTHY = 0x21,
+	SECSTAT_INVALID = 0x00,
+	SECSTAT_EMPTY = 0x10,
+	SECSTAT_UNEXPECTED = 0x11,
+	SECSTAT_MISSING = 0x20,
+	SECSTAT_PRESENT = 0x21,
+	SECSTAT_CORRUPTED = 0x30,
+	SECSTAT_CONFIRMED = 0x31,
+	SECSTAT_BAD = 0x40,
+	SECSTAT_GOOD = 0x41,
+	SECSTAT_UNKNOWN = 0xFF,
 } REC_Status;
 
 //	A single reconciliation entry in a disk-recon file
 typedef struct {
-	uint8_t type;
-	uint8_t track_num;
-	uint8_t sector_index;
-	uint8_t _unused_01;
+	DSK_SectorType type;
+	REC_Status status;
 	uint16_t checksum;
-	uint8_t _unused_02[10];
 } REC_Entry;
+
+//	Contains the results of analysing the disk;
+//	A REC_Entry for each sector
+typedef struct {
+	REC_Entry entries[1024];
+} REC_Analysis;
 
 //
 //	
@@ -44,6 +51,28 @@ typedef struct {
 //	Calculates the fletcher-checksum of a 256-Byte block of data
 //
 uint16_t REC_Checksum(void *ptr);
+
+//	Checks if a sector has data (non-zero bytes)
+//
+//	Returns false if `f_disk` is NULL
+bool REC_Sector_HasData(FILE *f_disk, DSK_Position pos);
+
+//	Analyses a disk and stores the results in a REC_Analysis struct
+//
+int REC_AnalyseDisk(FILE *f_disk, DSK_Directory dir, REC_Analysis *analysis);
+
+//	Get the state of a sector according to the Directory
+//
+//	Returns SECTOR_INVALID if pos is invalid
+REC_Status REC_GetStatus(REC_Analysis analysis, DSK_Position pos);
+
+//	Gets a constant char pointer to the name of a sector status
+//	
+const char *REC_GetStatusName(REC_Status status);
+
+//	Get a colour for a sector based on its state
+//
+Color REC_GetStatusColour(REC_Status status);
 
 //	Draw a block of sector-data to the screen in fixed-width ASCII columns
 //
@@ -57,5 +86,6 @@ uint16_t REC_Checksum(void *ptr);
 //		| I J K L |			0x08 | I J K L |	
 //
 void REC_DrawData(int x, int y, void *buf, size_t bufsz, bool hex_mode, bool show_offset);
+
 
 #endif

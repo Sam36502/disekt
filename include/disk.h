@@ -61,26 +61,25 @@ typedef struct {
 } DSK_Directory;
 
 typedef enum {
-	SECTOR_INVALID,
-	SECTOR_FREE,
-	SECTOR_IN_USE,
-} DSK_SectorStatus;
-
-typedef enum {
-	SECTYPE_INVALID = 0x00,
-	SECTYPE_NONE = 0x01,
-	SECTYPE_BAM = 0x02,
-	SECTYPE_DIR = 0x03,
+	SECTYPE_DEL_CORPSE = 0x00,
+	SECTYPE_SEQ_CORPSE = 0x01,
+	SECTYPE_PRG_CORPSE = 0x02,
+	SECTYPE_USR_CORPSE = 0x03,
+	SECTYPE_REL_CORPSE = 0x04,
 	SECTYPE_DEL = 0x80,
 	SECTYPE_SEQ = 0x81,
 	SECTYPE_PRG = 0x82,
 	SECTYPE_USR = 0x83,
 	SECTYPE_REL = 0x84,
+	SECTYPE_NONE = 0xF0,
+	SECTYPE_BAM = 0xF1,
+	SECTYPE_DIR = 0xF2,
+	SECTYPE_INVALID = 0xFF,
 } DSK_SectorType;
 
 typedef struct {
 	DSK_SectorType type;
-	DSK_SectorStatus status;
+	bool in_use;
 	uint16_t checksum_original;
 	uint16_t checksum_calculated;
 } DSK_SectorInfo;
@@ -92,6 +91,8 @@ typedef struct {
 //	Function Declarations
 //	
 
+//	---- Sector Utilities
+
 //	Gets the number of sectors in a track
 //
 //	Returns 0 for invalid track numbers (t<1 or t>35)
@@ -101,12 +102,23 @@ int DSK_Track_GetSectorCount(int track_num);
 //
 bool DSK_IsPositionValid(DSK_Position pos);
 
+//	Converts a disk position to an index of that position in blocks
+//
+//	Returns -1 if the position is invalid
+int DSK_PositionToIndex(DSK_Position pos);
+
 //	Seeks to the start of a given sector in a disk image file pointer
 //
 //	Returns 0 on success or
 //		1 - if f_disk is NULL
 //		2 - if pos is invalid
 int DSK_File_SeekPosition(FILE *f_disk, DSK_Position pos);
+
+//	Gets the disk position of the sector the mouse is hovering over
+//
+DSK_Position DSK_GetHoveredSector();
+
+//	---- Retrieving Data
 
 //	Fetches an arbitrary block of data from a given sector
 //
@@ -121,6 +133,8 @@ int DSK_File_GetData(FILE *f_disk, DSK_Position pos, void *buf, size_t bufsz);
 //		1 = Received NULL argument pointer
 int DSK_File_ParseDirectory(FILE *f_disk, DSK_Directory *dir);
 
+//	---- Debug Printing
+
 //	Prints out the contents of the BAM
 //
 void DSK_PrintBAM(DSK_BAM bam);
@@ -128,6 +142,8 @@ void DSK_PrintBAM(DSK_BAM bam);
 //	Prints out the contents of the Directory
 //
 void DSK_PrintDirectory(DSK_Directory dir);
+
+//	---- Getting Strings
 
 //	Gets the full directory header text
 //
@@ -141,23 +157,6 @@ char *DSK_GetDescription(DSK_Directory dir);
 // Limits the name to 17 chars trims and replaces shifted spaces
 char *DSK_GetName(DSK_Directory dir);
 
-//	Draws a sector to the screen
-//
-void DSK_Sector_Draw(DSK_Directory dir, DSK_Position pos, DSK_DrawMode mode);
-
-//	Get the state of a sector according to the Directory
-//
-//	Returns SECTOR_INVALID if pos is invalid
-DSK_SectorStatus DSK_Sector_GetStatus(DSK_Directory dir, DSK_Position pos);
-
-//	Gets a constant char pointer to the name of a sector status
-//	
-const char *DSK_Sector_GetStatusName(DSK_SectorStatus status);
-
-//	Get a colour for a sector based on its state
-//
-Color DSK_Sector_GetStatusColour(DSK_SectorStatus status);
-
 //	Gets all information for a certain sector
 //
 DSK_SectorInfo DSK_Sector_GetFullInfo(DSK_Directory dir, FILE *f_disk, DSK_Position pos);
@@ -166,9 +165,11 @@ DSK_SectorInfo DSK_Sector_GetFullInfo(DSK_Directory dir, FILE *f_disk, DSK_Posit
 //
 const char *DSK_Sector_GetTypeName(DSK_SectorType type);
 
-//	Gets the disk position of the sector the mouse is hovering over
+//	---- Drawing Functions
+
+//	Draws a sector to the screen
 //
-DSK_Position DSK_GetHoveredSector();
+void DSK_Sector_Draw(DSK_Directory dir, DSK_Position pos, DSK_DrawMode mode, Color clr);
 
 
 #endif

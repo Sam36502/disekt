@@ -17,27 +17,63 @@ bool DSK_IsPositionValid(DSK_Position pos) {
 	return true;
 }
 
+int DSK_PositionToIndex(DSK_Position pos) {
+	if (!DSK_IsPositionValid(pos)) return -1;
+
+	int index = 0;
+	int tr = pos.track - MIN_TRACKS;
+	if (tr > 30) { index += (tr-30) * 17; tr = 30; }
+	if (tr > 24) { index += (tr-24) * 18; tr = 24; }
+	if (tr > 17) { index += (tr-17) * 19; tr = 17; }
+	index += tr * 21;
+	index += pos.sector;
+
+	return index;
+}
+
 int DSK_File_SeekPosition(FILE *f_disk, DSK_Position pos) {
 	if (f_disk == NULL) return 1;
-	if (!DSK_IsPositionValid(pos)) return 2;
 
-	//printf("---> Postion: [% 3i/% 3i]\n", pos.track, pos.sector);
-
-	// Calculate offset
-	long offset = 0;
-	int tr = pos.track - MIN_TRACKS;
-	if (tr > 30) { offset += (tr-30) * 17; tr = 30; }
-	if (tr > 24) { offset += (tr-24) * 18; tr = 24; }
-	if (tr > 17) { offset += (tr-17) * 19; tr = 17; }
-	offset += tr * 21;
-	offset += pos.sector;
+	long offset = DSK_PositionToIndex(pos);
+	if (offset < 0) return 2;
 	offset *= 0x100;
-
-	//printf("---> Offset = 0x%08lX; %li Bytes\n", offset, offset);
 	
-	fseek(f_disk, offset, SEEK_SET);
+	return fseek(f_disk, offset, SEEK_SET);
+}
 
-	return 0;
+DSK_Position DSK_GetHoveredSector() {
+	int mouse_x = GetMouseX();
+	int mouse_y = GetMouseY();
+	double len_x = (double) mouse_x - DISK_CENTRE_X;
+	double len_y = (double) mouse_y - DISK_CENTRE_Y;
+
+	// Calculate track-number from mouse pos
+	double hyp = sqrt((len_x * len_x) + (len_y * len_y));
+	double track_width = (((double) DISK_RADIUS - SPINDLE_RADIUS) / (MAX_TRACKS + MIN_TRACKS));
+	int tracknum = MIN_TRACKS + MAX_TRACKS - (hyp - SPINDLE_RADIUS) / track_width;
+
+	// Calculate angle from mouse pos
+	float oa = len_y / len_x;
+	float mouse_angle;
+	if (mouse_x - DISK_CENTRE_X < 0) {
+		mouse_angle = 180.0f + atanf(oa) * (360.0f / TAU);
+	} else {
+		if (mouse_y - DISK_CENTRE_Y < 0) {
+			mouse_angle = 360.0f + atanf(oa) * (360.0f / TAU);
+		} else {
+			mouse_angle = 0.0f + atanf(oa) * (360.0f / TAU);
+		}
+	}
+	mouse_angle += 90.0f;
+	if (mouse_angle > 360.0f) mouse_angle -= 360.0f;
+
+	int trklen = DSK_Track_GetSectorCount(tracknum);
+	int sec = mouse_angle / (360.0f / trklen);
+
+	return (DSK_Position){
+		.track = tracknum,
+		.sector = sec,
+	};
 }
 
 int DSK_File_GetData(FILE *f_disk, DSK_Position pos, void *buf, size_t bufsz) {
@@ -198,7 +234,7 @@ void DSK_PrintBAM(DSK_BAM bam) {
 	}
 }
 
-void DSK_Sector_Draw(DSK_Directory dir, DSK_Position pos, DSK_DrawMode mode) {
+void DSK_Sector_Draw(DSK_Directory dir, DSK_Position pos, DSK_DrawMode mode, Color clr) {
 	if (!DSK_IsPositionValid(pos)) return;
 
 	int track_index = MAX_TRACKS - pos.track;
@@ -213,8 +249,7 @@ void DSK_Sector_Draw(DSK_Directory dir, DSK_Position pos, DSK_DrawMode mode) {
 		(Vector2){ DISK_CENTRE_X, DISK_CENTRE_Y },
 		r_inner, r_outer,
 		start_angle, end_angle,
-		ARC_RESOLUTION,
-		DSK_Sector_GetStatusColour(DSK_Sector_GetStatus(dir, pos))
+		ARC_RESOLUTION, clr
 	);
 
 	switch (mode) {
@@ -243,106 +278,23 @@ void DSK_Sector_Draw(DSK_Directory dir, DSK_Position pos, DSK_DrawMode mode) {
 	}
 }
 
-DSK_SectorStatus DSK_Sector_GetStatus(DSK_Directory dir, DSK_Position pos) {
-	if (!DSK_IsPositionValid(pos)) return SECTOR_INVALID;
-	
-	int is_free = (dir.bam.entries[pos.track - 1] >> (8 + pos.sector)) & 1;
-	if (is_free) return SECTOR_FREE;
-	else return SECTOR_IN_USE;
-}
-
-const char *DSK_Sector_GetStatusName(DSK_SectorStatus status) {
-	switch (status) {
-		case SECTOR_FREE: return "Sector Free";
-		case SECTOR_IN_USE: return "Sector in use";
-		default: return "Invalid Sector";
-	}
-}
-
-
-Color DSK_Sector_GetStatusColour(DSK_SectorStatus status) {
-	switch (status) {
-		case SECTOR_INVALID: return MAGENTA;
-		case SECTOR_FREE: return BLACK;
-		case SECTOR_IN_USE: return GREEN;
-		default: return (Color){ 0x00, 0x00, 0x00, 0x00 };
-	}
-}
-
-DSK_SectorInfo DSK_Sector_GetFullInfo(DSK_Directory dir, FILE *f_disk, DSK_Position pos) {
-	DSK_SectorInfo info = {
-		.type = SECTYPE_INVALID,
-		.status = SECTOR_INVALID,
-		.checksum_original = 0x0000,
-		.checksum_calculated = 0xFFFF
-	};
-	if (f_disk == NULL) return info;
-
-	info.status = DSK_Sector_GetStatus(dir, pos);
-
-	//	TODO: Parse the Directory and sort out the disk structure
-	//	For now:
-	if (pos.track == 18) {
-		if (pos.sector == 0) info.type = SECTYPE_BAM;
-		else info.type = SECTYPE_DIR;
-	} else {
-		if (info.status == SECTOR_IN_USE) info.type = SECTYPE_USR;
-		if (info.status == SECTOR_FREE) info.type = SECTYPE_NONE;
-	}
-
-	//DSK_File_SeekPosition(f_disk, pos);
-
-	return info;
-}
-
-//	TODO: Change my types and include "corpse" detection
 const char *DSK_Sector_GetTypeName(DSK_SectorType type) {
 	switch(type) {
-		case SECTYPE_INVALID: return "Invalid Sector Type";
-		case SECTYPE_NONE: return "-";
-		case SECTYPE_BAM: return "Block-Availability Map";
-		case SECTYPE_DIR: return "Directory Table";
+		case SECTYPE_DEL_CORPSE: return "Deleted Block [CORPSE]";
+		case SECTYPE_SEQ_CORPSE: return "Sequential Data Block [CORPSE]";
+		case SECTYPE_PRG_CORPSE: return "Program Block [CORPSE]";
+		case SECTYPE_USR_CORPSE: return "User Data Block [CORPSE]";
+		case SECTYPE_REL_CORPSE: return "Relative Data Block [CORPSE]";
 		case SECTYPE_DEL: return "Deleted Block";
 		case SECTYPE_SEQ: return "Sequential Data Block";
 		case SECTYPE_PRG: return "Program Block";
 		case SECTYPE_USR: return "User Data Block";
 		case SECTYPE_REL: return "Relative Data Block";
+		case SECTYPE_NONE: return "-";
+		case SECTYPE_BAM: return "Block-Availability Map";
+		case SECTYPE_DIR: return "Directory Table";
+		case SECTYPE_INVALID: return "Invalid Sector Type";
 	}
 	return "";
-}
-
-DSK_Position DSK_GetHoveredSector() {
-	int mouse_x = GetMouseX();
-	int mouse_y = GetMouseY();
-	double len_x = (double) mouse_x - DISK_CENTRE_X;
-	double len_y = (double) mouse_y - DISK_CENTRE_Y;
-
-	// Calculate track-number from mouse pos
-	double hyp = sqrt((len_x * len_x) + (len_y * len_y));
-	double track_width = (((double) DISK_RADIUS - SPINDLE_RADIUS) / (MAX_TRACKS + MIN_TRACKS));
-	int tracknum = MIN_TRACKS + MAX_TRACKS - (hyp - SPINDLE_RADIUS) / track_width;
-
-	// Calculate angle from mouse pos
-	float oa = len_y / len_x;
-	float mouse_angle;
-	if (mouse_x - DISK_CENTRE_X < 0) {
-		mouse_angle = 180.0f + atanf(oa) * (360.0f / TAU);
-	} else {
-		if (mouse_y - DISK_CENTRE_Y < 0) {
-			mouse_angle = 360.0f + atanf(oa) * (360.0f / TAU);
-		} else {
-			mouse_angle = 0.0f + atanf(oa) * (360.0f / TAU);
-		}
-	}
-	mouse_angle += 90.0f;
-	if (mouse_angle > 360.0f) mouse_angle -= 360.0f;
-
-	int trklen = DSK_Track_GetSectorCount(tracknum);
-	int sec = mouse_angle / (360.0f / trklen);
-
-	return (DSK_Position){
-		.track = tracknum,
-		.sector = sec,
-	};
 }
 

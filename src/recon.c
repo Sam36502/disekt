@@ -1,5 +1,4 @@
 #include "../include/recon.h"
-#include <raylib.h>
 
 
 uint16_t REC_Checksum(void *ptr) {
@@ -13,6 +12,19 @@ uint16_t REC_Checksum(void *ptr) {
 	}
 
 	return (uint16_t)(hi) << 8 | (uint16_t)(lo);
+}
+
+bool REC_Sector_HasData(FILE *f_disk, DSK_Position pos) {
+	int err = DSK_File_SeekPosition(f_disk, pos);
+	if (err != 0) return false;
+
+	for (int i=0; i<BLOCK_SIZE; i++) {
+		uint8_t byte;
+		fread(&byte, sizeof(uint8_t), 1, f_disk);
+		if (byte != 0x00) return false;
+	}
+
+	return true;
 }
 
 void __drawhexbyte(Font font, int x, int y, uint8_t byte, Color clr) {
@@ -93,6 +105,81 @@ void REC_DrawData(int x, int y, void *buf, size_t bufsz, bool hex_mode, bool sho
 	}
 
 }
+
+int REC_AnalyseDisk(FILE *f_disk, DSK_Directory dir, REC_Analysis *analysis) {
+	if (f_disk == NULL || analysis == NULL) return 1;
+
+	// TODO: Add loading indicator or smth?
+	
+	for (int t=MIN_TRACKS; t<=MAX_TRACKS; t++) {
+		for (int s=0; s<21; s++) {
+			DSK_Position pos = { t, s };
+			int index = DSK_PositionToIndex(pos);
+			if (index < 0) continue;
+
+			bool has_data = REC_Sector_HasData(f_disk, pos);
+			bool is_free = (dir.bam.entries[pos.track - 1] >> (8 + pos.sector)) & 1;
+
+			// TODO: Full Analysis!
+			REC_Status stat;
+			if (is_free) {
+				if (has_data) stat = SECSTAT_UNEXPECTED;
+				else stat = SECSTAT_EMPTY;
+			} else {
+				if (has_data) stat = SECSTAT_PRESENT;
+				else stat = SECSTAT_MISSING;
+			}
+
+			analysis->entries[index].status = stat;
+		}
+	}
+
+	return 0;
+}
+
+REC_Status REC_GetStatus(REC_Analysis analysis, DSK_Position pos) {
+	int index = DSK_PositionToIndex(pos);
+	if (index < 0) return SECSTAT_INVALID;
+	
+	return analysis.entries[index].status;
+}
+
+const char *REC_GetStatusName(REC_Status status) {
+	switch (status) {
+		case SECSTAT_EMPTY: return "Empty";
+		case SECSTAT_UNEXPECTED: return "Has unexpected Data";
+		case SECSTAT_MISSING: return "Missing";
+		case SECSTAT_PRESENT: return "Has Data";
+		case SECSTAT_CORRUPTED: return "Invalid Checksum";
+		case SECSTAT_CONFIRMED: return "Checksum Confirmed";
+		case SECSTAT_BAD: return "Data doesn't match expected format";
+		case SECSTAT_GOOD: return "Sector is Good!";
+
+		case SECSTAT_INVALID:
+		default: return "Invalid";
+	}
+}
+
+
+Color REC_GetStatusColour(REC_Status status) {
+	switch (status) {
+		case SECSTAT_EMPTY: return GRAY;
+		case SECSTAT_UNEXPECTED: return PURPLE;
+		case SECSTAT_MISSING: return ORANGE;
+		case SECSTAT_PRESENT: return YELLOW;
+		case SECSTAT_CORRUPTED: return MAROON;
+		case SECSTAT_CONFIRMED: return DARKGREEN;
+		case SECSTAT_BAD: return RED;
+		case SECSTAT_GOOD: return GREEN;
+
+		case SECSTAT_INVALID:
+		default: return (Color){ 0x00, 0x00, 0x00, 0x00 };
+	}
+}
+
+
+
+
 
 //REC_File *REC_ReadFile(char *filename) {
 //	if (filename == NULL) return NULL;
