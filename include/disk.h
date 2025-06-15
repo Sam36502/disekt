@@ -165,6 +165,10 @@ DSK_SectorInfo DSK_Sector_GetFullInfo(DSK_Directory dir, FILE *f_disk, DSK_Posit
 //
 const char *DSK_Sector_GetTypeName(DSK_SectorType type);
 
+//	Get a colour for a sector based on its type
+//
+Color DSK_Sector_GetTypeColour(DSK_SectorType type);
+
 //	---- Drawing Functions
 
 //	Draws a sector to the screen

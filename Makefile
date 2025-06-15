@@ -15,7 +15,7 @@ LDLIBS=-lm -lraylib
 .PHONY: run clean 
 
 run: $(BIN)
-	$(BIN) disks/testout.d64
+	$(BIN) disks/memtest_1999.d64
 
 $(BIN): $(OBJ) | $(BIN_DIR)
 	$(CC) $^ $(LDLIBS) -o $@

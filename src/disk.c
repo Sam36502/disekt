@@ -1,4 +1,5 @@
 #include "../include/disk.h"
+#include <raylib.h>
 
 int DSK_Track_GetSectorCount(int track_num) {
 	if (track_num < MIN_TRACKS || track_num > MAX_TRACKS) return 0;
@@ -268,8 +269,8 @@ void DSK_Sector_Draw(DSK_Directory dir, DSK_Position pos, DSK_DrawMode mode, Col
 		case DSK_DRAW_SELECTED: {
 			DrawRing(
 				(Vector2){ DISK_CENTRE_X, DISK_CENTRE_Y },
-				r_inner + 2.0f, r_outer - 2.0f,
-				start_angle + 0.5f, end_angle - 0.5f,
+				r_inner + 3.0f, r_outer - 3.0f,
+				start_angle + 0.8f, end_angle - 0.8f,
 				ARC_RESOLUTION,
 				WHITE
 			);
@@ -298,3 +299,22 @@ const char *DSK_Sector_GetTypeName(DSK_SectorType type) {
 	return "";
 }
 
+Color DSK_Sector_GetTypeColour(DSK_SectorType type) {
+	switch(type) {
+		case SECTYPE_DEL_CORPSE: return BLACK;
+		case SECTYPE_SEQ_CORPSE: return DARKGREEN;
+		case SECTYPE_PRG_CORPSE: return DARKBLUE;
+		case SECTYPE_USR_CORPSE: return MAROON;
+		case SECTYPE_REL_CORPSE: return DARKPURPLE;
+		case SECTYPE_DEL: return BLACK;
+		case SECTYPE_SEQ: return GREEN;
+		case SECTYPE_PRG: return BLUE;
+		case SECTYPE_USR: return RED;
+		case SECTYPE_REL: return PURPLE;
+		case SECTYPE_NONE: return GRAY;
+		case SECTYPE_BAM: return GOLD;
+		case SECTYPE_DIR: return GOLD;
+		case SECTYPE_INVALID: return MAGENTA;
+	}
+	return GRAY;
+}

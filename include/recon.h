@@ -13,6 +13,8 @@
 #include "../include/arc.h"
 #include "../include/disk.h"
 
+#define MAX_ANALYSIS_ENTRIES 1024
+
 //	
 //	Type Definitions
 //	
@@ -32,7 +34,9 @@ typedef enum {
 
 //	A single reconciliation entry in a disk-recon file
 typedef struct {
-	DSK_SectorType type;
+	int file_index;			// Which sector of the file this one is
+	DSK_DirEntry dir_entry;	// Which directory file this sector belongs to (if any; undefined if type is not a file type)
+	DSK_SectorType type;	// What type of sector this is (
 	REC_Status status;
 	uint16_t checksum;
 } REC_Entry;
@@ -40,7 +44,7 @@ typedef struct {
 //	Contains the results of analysing the disk;
 //	A REC_Entry for each sector
 typedef struct {
-	REC_Entry entries[1024];
+	REC_Entry entries[MAX_ANALYSIS_ENTRIES];
 } REC_Analysis;
 
 //

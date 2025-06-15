@@ -14,6 +14,7 @@
 #define SCREEN_HEIGHT 1000
 
 #define KEY_TOGGLE_HEX_MODE 290
+#define KEY_TOGGLE_VIEW_MODE 291
 
 
 void usage();
@@ -66,6 +67,7 @@ int main(int argc, char *argv[]) {
 	// Main Loop
 	bool redraw = true;
 	bool hex_mode = false;
+	int view_mode = 0;	// 0 = type view, 1 = status view, 2 = file view
 	DSK_Position curr_sector = DSK_POSITION_BAM;
 	char *name = DSK_GetName(dir);
 
@@ -93,6 +95,7 @@ int main(int argc, char *argv[]) {
 		int key = GetKeyPressed();
 		if (true || key != 0) {
 			if (key == KEY_TOGGLE_HEX_MODE) { hex_mode = !hex_mode; }
+			if (key == KEY_TOGGLE_VIEW_MODE) { view_mode++; view_mode %= 3; }
 			redraw = true;
 
 			redraw |= DEBUG_HandleEvents(key);
@@ -115,9 +118,19 @@ int main(int argc, char *argv[]) {
 					
 					REC_Entry info;
 					REC_GetInfo(analysis, pos, &info);
-					DSK_Sector_Draw(dir, pos, dm, REC_GetStatusColour(info.status));
+					Color clr = GRAY;
+					switch (view_mode) {
+						case 0: clr = DSK_Sector_GetTypeColour(info.type); break;
+						case 1: clr = REC_GetStatusColour(info.status); break;
+						case 2: clr = GRAY; break;
+					}
+
+					DSK_Sector_Draw(dir, pos, dm, clr);
 				}
 			}
+
+			const int info_x = DISK_CENTRE_X * 2;
+			const int info_tab_x = info_x + (16 * 12);
 
 			// Draw Title
 			char buf[256];
@@ -136,12 +149,26 @@ int main(int argc, char *argv[]) {
 			}
 			DrawText(buf, 10 + (9 * 12), SCREEN_HEIGHT - 10 - 20, 20, BLACK);
 
+			// Draw current view mode name
+			DrawText("View Mode [F2]", info_x - 10 - (14 * 11), SCREEN_HEIGHT - 10 - 45, 20, BLACK);
+			switch (view_mode) {
+				case 0: DrawText("Sector Type",
+					info_x - 10 - (11 * 12), SCREEN_HEIGHT - 10 - 20,
+					20, ORANGE
+				); break;
+				case 1: DrawText("Sector Status",
+					info_x - 10 - (13 * 12), SCREEN_HEIGHT - 10 - 20,
+					20, ORANGE
+				); break;
+				case 2: DrawText("File Blocks",
+					info_x - 10 - (11 * 12), SCREEN_HEIGHT - 10 - 20,
+					20, ORANGE
+				); break;
+			}
 
 			// Draw Sector Info
 			REC_Entry info;
 			REC_GetInfo(analysis, curr_sector, &info);
-			const int info_x = DISK_CENTRE_X * 2;
-			const int info_tab_x = info_x + (16 * 12);
 			DrawLineEx(
 				(Vector2){ info_x, 10 },
 				(Vector2){ info_x, SCREEN_HEIGHT - 10 },
@@ -169,26 +196,70 @@ int main(int argc, char *argv[]) {
 			DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, REC_GetStatusColour(info.status));
 
 			// Draw specific sector info
-			line_num = 10;
-			if (curr_sector.track == 18 && curr_sector.sector == 0) {
-				//case SECTYPE_BAM: {
-					snprintf(buf, 256, "Full Directory Header:");
-					DrawText(buf, info_x + 20, 10 + (line_num++ * 20), 20, ORANGE);
+			line_num += 2;
+			switch (info.type) {
+
+				case SECTYPE_BAM: {
+					snprintf(buf, 256, "Full Header Text:");
+					DrawText(buf, info_x + 20, 10 + (line_num++ * 20), 20, BLACK);
 					line_num++;
 
-					REC_DrawData(
-						info_x + 20, 10 + (line_num * 20),
-						dir.header, DIR_HEADER_SIZE,
-						hex_mode, false
-					);
+					char *desc = DSK_GetDescription(dir);
+					int desclen = strlen(desc);
+					char *str = desc;
+					int prev = 0;
+					for (int i=0; i<desclen; i++) {
+						int len = i - prev;
+						if (i < desclen-1 && len < 40 && desc[i] != '\n') continue;
+
+						//if (desc[i] == '\n') len--;
+
+						snprintf(buf, 256, "%.*s", len, str);
+						DrawText(buf, info_x + 20, 10 + (line_num++ * 20), 20, DARKGRAY);
+
+						prev = i;
+						str = desc + i;
+					}
+				} break;
+
+				//case SECTYPE_DIR: {
+				//	snprintf(buf, 256, "Directory Table:");
+				//	DrawText(buf, info_x + 20, 10 + (line_num++ * 20), 20, ORANGE);
+				//	line_num++;
+
+				//	REC_DrawData(
+				//		info_x + 20, 10 + (line_num * 20),
+				//		dir.header, DIR_HEADER_SIZE,
+				//		hex_mode, false
+				//	);
 				//} break;
-				//default: break;
+
+				case SECTYPE_PRG:
+				case SECTYPE_REL:
+				case SECTYPE_SEQ:
+				case SECTYPE_PRG_CORPSE:
+				case SECTYPE_REL_CORPSE:
+				case SECTYPE_SEQ_CORPSE: {
+
+					snprintf(buf, 256, "%16s", "File:");
+					DrawText(buf, info_x + 10, 10 + (line_num * 20), 20, BLACK);
+					snprintf(buf, 256, "%s", info.dir_entry.filename);
+					DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, ORANGE);
+
+					snprintf(buf, 256, "Block %i / %i", info.file_index+1, info.dir_entry.block_count);
+					DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, BLACK);
+				} break;
+
+
+				default: break;
 			}
 
 			// Display Sector contents
 			line_num = 31;
 			snprintf(buf, 256, "Sector Contents:");
-			DrawText(buf, info_x + 20, 10 + (line_num++ * 20), 20, ORANGE);
+			DrawText(buf, info_x + 20, 10 + (line_num * 20), 20, BLACK);
+			snprintf(buf, 256, "%6s [F1]", hex_mode ? "HEX":"ASCII");
+			DrawText(buf, SCREEN_WIDTH - 10 - (10 * 11), 10 + (line_num++ * 20), 20, BLUE);
 			line_num++;
 
 			REC_DrawData(

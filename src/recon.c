@@ -1,4 +1,5 @@
 #include "../include/recon.h"
+#include <raylib.h>
 
 
 uint16_t REC_Checksum(void *ptr) {
@@ -21,11 +22,9 @@ bool REC_Sector_HasData(FILE *f_disk, DSK_Position pos) {
 	for (int i=0; i<BLOCK_SIZE; i++) {
 		uint8_t byte;
 		int err = fread(&byte, sizeof(uint8_t), 1, f_disk);
-		if (err != 1) {
-			printf("Failed to read byte while checking if sector is empty (returned %i)\n", err);
-		}
+		if (err != 1) return false;
 		if (byte != 0x00) {
-			if (i != 1) return true;
+			if (i != 1 || byte != 0xFF) return true;
 		}
 	}
 
@@ -60,7 +59,7 @@ void REC_DrawData(int x, int y, void *buf, size_t bufsz, bool hex_mode, bool sho
 
 	int nx = x;
 	if (show_offset) nx += 40;
-	int cw = 20;
+	int cw = 32;
 	if (hex_mode) cw = 32;
 
 	for (int i=0; i<bufsz; i++) {
@@ -114,39 +113,97 @@ void REC_DrawData(int x, int y, void *buf, size_t bufsz, bool hex_mode, bool sho
 int REC_AnalyseDisk(FILE *f_disk, DSK_Directory dir, REC_Analysis *analysis) {
 	if (f_disk == NULL || analysis == NULL) return 1;
 
-	// TODO: Add loading indicator or smth?
-	
+	// Initialise analysis struct
+	for (int i=0; i<MAX_ANALYSIS_ENTRIES; i++) {
+		analysis->entries[i] = (REC_Entry){
+			.type = SECTYPE_INVALID,
+			.status = SECSTAT_INVALID,
+			.file_index = -1,
+			.dir_entry = { SECTYPE_INVALID, { 0, 0 }, "", 0 },
+			.checksum = 0x0000,
+		};
+	}
+
+	//	Traverse the known directory sectors on track 18
+	DSK_Position pos;
+	DSK_File_SeekPosition(f_disk, DSK_POSITION_BAM);
+	fread(&pos, sizeof(DSK_Position), 1, f_disk);
+
+	int index = DSK_PositionToIndex(pos);
+	while (index >= 0) {
+		analysis->entries[index].type = SECTYPE_DIR;
+		analysis->entries[index].status = SECSTAT_GOOD;	// TODO: Check if dir block is actually good
+
+		DSK_File_SeekPosition(f_disk, pos);
+		fread(&pos, sizeof(DSK_Position), 1, f_disk);
+		index = DSK_PositionToIndex(pos);
+	}
+
+	// Traverse each block for each directory file and assign entries to known sectors
+	for (int i=0; i<dir.num_entries; i++) {
+		DSK_DirEntry entry = dir.entries[i];
+
+		DSK_Position pos = entry.pos;
+		int index = DSK_PositionToIndex(pos);
+		int num = 0;
+		while (index >= 0 && num < entry.block_count) {
+			//printf("---> Adding dir entry for sector [% 3i/% 3i]; File block %i/%i\n",
+			//	pos.track, pos.sector, num+1, entry.block_count
+			//);
+			analysis->entries[index].dir_entry = entry;
+			analysis->entries[index].file_index = num++;
+			analysis->entries[index].type = entry.filetype;
+
+			// TODO: Analyse file blocks
+			analysis->entries[index].status = SECSTAT_UNKNOWN;
+
+			DSK_File_SeekPosition(f_disk, pos);
+			int n = fread(&pos, sizeof(DSK_Position), 1, f_disk);
+			if (n != 1) break;
+
+			//printf("---> Next block in file: [% 3i/% 3i]\n", pos.track, pos.sector);
+			index = DSK_PositionToIndex(pos);
+		}
+
+	}
+
+	// Check all other sectors
 	for (int t=MIN_TRACKS; t<=MAX_TRACKS; t++) {
 		for (int s=0; s<21; s++) {
 			DSK_Position pos = { t, s };
 			int index = DSK_PositionToIndex(pos);
 			if (index < 0) continue;
 
+			DSK_DirEntry dirent = analysis->entries[index].dir_entry;
+			//if (analysis->entries[index].type != SECTYPE_INVALID) continue; // Skip entries we've already checked
+
 			bool has_data = REC_Sector_HasData(f_disk, pos);
 			bool is_free = (dir.bam.entries[pos.track - 1] >> (8 + pos.sector)) & 1;
+			DSK_SectorType type = analysis->entries[index].type;
+			REC_Status stat = analysis->entries[index].status;
 
-			// TODO: Full Analysis!
-			REC_Status stat;
-			if (is_free) {
-				if (has_data) stat = SECSTAT_UNEXPECTED;
-				else stat = SECSTAT_EMPTY;
-			} else {
-				if (has_data) stat = SECSTAT_PRESENT;
-				else stat = SECSTAT_MISSING;
+			if (type == SECTYPE_INVALID) {
+				if (t == 18 && s == 0) {
+					type = SECTYPE_BAM;
+					stat = SECSTAT_GOOD;	// TODO: Check if the BAM really matches the expected format on load
+				} else {
+					type = SECTYPE_NONE;
+					stat = SECSTAT_UNKNOWN;
+				}
 			}
 
-			analysis->entries[index].status = stat;
-
-			DSK_SectorType type = SECTYPE_INVALID;
-			if (t == 18) {
-				if (s == 0) type = SECTYPE_BAM;
-				else if (has_data) type = SECTYPE_DIR;
-				else type = SECTYPE_NONE;
-			} else {
-				type = SECTYPE_USR;
+			if (stat == SECSTAT_INVALID || stat == SECSTAT_UNKNOWN) {
+				if (is_free) {
+					if (has_data) stat = SECSTAT_UNEXPECTED;
+					else stat = SECSTAT_EMPTY;
+				} else {
+					if (has_data) stat = SECSTAT_PRESENT;
+					else stat = SECSTAT_MISSING;
+				}
 			}
+
 			analysis->entries[index].type = type;
-			
+			analysis->entries[index].status = stat;
 		}
 	}
 
@@ -169,16 +226,17 @@ const char *REC_GetStatusName(REC_Status status) {
 		case SECSTAT_UNEXPECTED: return "Has unexpected Data";
 		case SECSTAT_MISSING: return "Missing";
 		case SECSTAT_PRESENT: return "Has Data";
-		case SECSTAT_CORRUPTED: return "Invalid Checksum";
-		case SECSTAT_CONFIRMED: return "Checksum Confirmed";
 		case SECSTAT_BAD: return "Data doesn't match expected format";
 		case SECSTAT_GOOD: return "Sector is Good!";
+		case SECSTAT_CORRUPTED: return "Invalid Checksum";
+		case SECSTAT_CONFIRMED: return "Checksum Confirmed";
 
-		case SECSTAT_INVALID:
-		default: return "Invalid";
+		case SECSTAT_INVALID: return "Invalid";
+		case SECSTAT_UNKNOWN: return "Unknown";
 	}
-}
 
+	return "";
+}
 
 Color REC_GetStatusColour(REC_Status status) {
 	switch (status) {
@@ -186,14 +244,16 @@ Color REC_GetStatusColour(REC_Status status) {
 		case SECSTAT_UNEXPECTED: return PURPLE;
 		case SECSTAT_MISSING: return ORANGE;
 		case SECSTAT_PRESENT: return YELLOW;
-		case SECSTAT_CORRUPTED: return MAROON;
-		case SECSTAT_CONFIRMED: return DARKGREEN;
 		case SECSTAT_BAD: return RED;
 		case SECSTAT_GOOD: return GREEN;
+		case SECSTAT_CORRUPTED: return MAROON;
+		case SECSTAT_CONFIRMED: return DARKGREEN;
 
-		case SECSTAT_INVALID:
-		default: return (Color){ 0x00, 0x00, 0x00, 0x00 };
+		case SECSTAT_INVALID: return MAGENTA;
+		case SECSTAT_UNKNOWN: return DARKPURPLE;
 	}
+
+	return BLACK;
 }
 
 
