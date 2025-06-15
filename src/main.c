@@ -67,7 +67,7 @@ int main(int argc, char *argv[]) {
 	// Main Loop
 	bool redraw = true;
 	bool hex_mode = false;
-	int view_mode = 0;	// 0 = type view, 1 = status view, 2 = file view
+	int view_mode = 1;	// 0 = type view, 1 = status view, 2 = file view
 	DSK_Position curr_sector = DSK_POSITION_BAM;
 	char *name = DSK_GetName(dir);
 
@@ -107,22 +107,35 @@ int main(int argc, char *argv[]) {
 			// Clear Background
 			ClearBackground(RAYWHITE);
 
+			REC_Entry curr_info;
+			REC_GetInfo(analysis, curr_sector, &curr_info);
+			REC_Entry hov_info;
+			REC_GetInfo(analysis, hov, &hov_info);
+
 			// Draw Disk-Sectors
 			for (int t=1; t<=35; t++) {
 				for (int s=0; s<21; s++) {
 					DSK_Position pos = { t, s };
 					DSK_DrawMode dm = DSK_DRAW_NORMAL;
 
-					if (pos.track == hov.track && pos.sector == hov.sector) dm = DSK_DRAW_HIGHLIGHT;
-					if (pos.track == curr_sector.track && pos.sector == curr_sector.sector) dm = DSK_DRAW_SELECTED;
-					
 					REC_Entry info;
 					REC_GetInfo(analysis, pos, &info);
+
+					if (pos.track == hov.track && pos.sector == hov.sector) {
+						dm = DSK_DRAW_HIGHLIGHT;
+					}
+					if (pos.track == curr_sector.track && pos.sector == curr_sector.sector) {
+						dm = DSK_DRAW_SELECTED;
+					}
+
 					Color clr = GRAY;
 					switch (view_mode) {
 						case 0: clr = DSK_Sector_GetTypeColour(info.type); break;
 						case 1: clr = REC_GetStatusColour(info.status); break;
-						case 2: clr = GRAY; break;
+						case 2: clr = REC_GetFileColour(dir, info,
+							(hov_info.dir_index == info.dir_index),
+							(curr_info.dir_index == info.dir_index)
+						); break;
 					}
 
 					DSK_Sector_Draw(dir, pos, dm, clr);
@@ -153,22 +166,20 @@ int main(int argc, char *argv[]) {
 			DrawText("View Mode [F2]", info_x - 10 - (14 * 11), SCREEN_HEIGHT - 10 - 45, 20, BLACK);
 			switch (view_mode) {
 				case 0: DrawText("Sector Type",
-					info_x - 10 - (11 * 12), SCREEN_HEIGHT - 10 - 20,
-					20, ORANGE
+					info_x - 10 - (12 * 12), SCREEN_HEIGHT - 10 - 20,
+					20, BLUE
 				); break;
 				case 1: DrawText("Sector Status",
 					info_x - 10 - (13 * 12), SCREEN_HEIGHT - 10 - 20,
 					20, ORANGE
 				); break;
 				case 2: DrawText("File Blocks",
-					info_x - 10 - (11 * 12), SCREEN_HEIGHT - 10 - 20,
-					20, ORANGE
+					info_x - 10 - (10 * 12), SCREEN_HEIGHT - 10 - 20,
+					20, GRAY
 				); break;
 			}
 
 			// Draw Sector Info
-			REC_Entry info;
-			REC_GetInfo(analysis, curr_sector, &info);
 			DrawLineEx(
 				(Vector2){ info_x, 10 },
 				(Vector2){ info_x, SCREEN_HEIGHT - 10 },
@@ -187,17 +198,17 @@ int main(int argc, char *argv[]) {
 
 			snprintf(buf, 256, "%16s", "Sector Type:");
 			DrawText(buf, info_x + 10, 10 + (line_num * 20), 20, BLACK);
-			snprintf(buf, 256, "%s", DSK_Sector_GetTypeName(info.type));
+			snprintf(buf, 256, "%s", DSK_Sector_GetTypeName(curr_info.type));
 			DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, ORANGE);
 
 			snprintf(buf, 256, "%16s", "Sector Status:");
 			DrawText(buf, info_x + 10, 10 + (line_num * 20), 20, BLACK);
-			snprintf(buf, 256, "%s", REC_GetStatusName(info.status));
-			DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, REC_GetStatusColour(info.status));
+			snprintf(buf, 256, "%s", REC_GetStatusName(curr_info.status));
+			DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, REC_GetStatusColour(curr_info.status));
 
 			// Draw specific sector info
 			line_num += 2;
-			switch (info.type) {
+			switch (curr_info.type) {
 
 				case SECTYPE_BAM: {
 					snprintf(buf, 256, "Full Header Text:");
@@ -242,10 +253,10 @@ int main(int argc, char *argv[]) {
 
 					snprintf(buf, 256, "%16s", "File:");
 					DrawText(buf, info_x + 10, 10 + (line_num * 20), 20, BLACK);
-					snprintf(buf, 256, "%s", info.dir_entry.filename);
+					snprintf(buf, 256, "%s", curr_info.dir_entry.filename);
 					DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, ORANGE);
 
-					snprintf(buf, 256, "Block %i / %i", info.file_index+1, info.dir_entry.block_count);
+					snprintf(buf, 256, "Block %i / %i", curr_info.file_index+1, curr_info.dir_entry.block_count);
 					DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, BLACK);
 				} break;
 

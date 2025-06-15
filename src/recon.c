@@ -120,6 +120,7 @@ int REC_AnalyseDisk(FILE *f_disk, DSK_Directory dir, REC_Analysis *analysis) {
 			.status = SECSTAT_INVALID,
 			.file_index = -1,
 			.dir_entry = { SECTYPE_INVALID, { 0, 0 }, "", 0 },
+			.dir_index = -1,
 			.checksum = 0x0000,
 		};
 	}
@@ -151,18 +152,30 @@ int REC_AnalyseDisk(FILE *f_disk, DSK_Directory dir, REC_Analysis *analysis) {
 			//	pos.track, pos.sector, num+1, entry.block_count
 			//);
 			analysis->entries[index].dir_entry = entry;
-			analysis->entries[index].file_index = num++;
+			analysis->entries[index].dir_index = i;
+			analysis->entries[index].file_index = num;
 			analysis->entries[index].type = entry.filetype;
-
-			// TODO: Analyse file blocks
 			analysis->entries[index].status = SECSTAT_UNKNOWN;
 
 			DSK_File_SeekPosition(f_disk, pos);
 			int n = fread(&pos, sizeof(DSK_Position), 1, f_disk);
-			if (n != 1) break;
+			if (n != 1) {
+				analysis->entries[index].status = SECSTAT_BAD;
+				break;
+			}
+
+			// TODO: Properly analyse file blocks based on their type
+			// For now: Count them as "good" so long as their next block pointer is valid
+			if (num < entry.block_count-1) {
+				if (DSK_IsPositionValid(pos)) analysis->entries[index].status = SECSTAT_GOOD;
+				else analysis->entries[index].status = SECSTAT_BAD;
+			} else {
+				if (pos.track == 0x00 && pos.sector == 0xFF) analysis->entries[index].status = SECSTAT_GOOD;
+			}
 
 			//printf("---> Next block in file: [% 3i/% 3i]\n", pos.track, pos.sector);
 			index = DSK_PositionToIndex(pos);
+			num++;
 		}
 
 	}
@@ -174,7 +187,6 @@ int REC_AnalyseDisk(FILE *f_disk, DSK_Directory dir, REC_Analysis *analysis) {
 			int index = DSK_PositionToIndex(pos);
 			if (index < 0) continue;
 
-			DSK_DirEntry dirent = analysis->entries[index].dir_entry;
 			//if (analysis->entries[index].type != SECTYPE_INVALID) continue; // Skip entries we've already checked
 
 			bool has_data = REC_Sector_HasData(f_disk, pos);
@@ -256,6 +268,43 @@ Color REC_GetStatusColour(REC_Status status) {
 	return BLACK;
 }
 
+Color REC_GetFileColour(DSK_Directory dir, REC_Entry entry, bool is_hovered, bool is_selected) {
+	if (entry.dir_index < 0) return GRAY;
+
+	double unit = (255.0 * 255.0) / (double) dir.num_entries;
+	int index = entry.dir_index;
+
+	//double red = 200.0 / ((double)(dir.num_entries) / 9.0);
+	//double green = 200.0 / ((double)(dir.num_entries % 9) / 3.0);
+	//double blue = 200.0 / ((double)(dir.num_entries % 3) / 1.0);
+
+	Color clr = { 0, 0, 0, 0xFF };
+	//printf("---> Red clr: %4.4f\n", red);
+	//printf("---> Green clr: %4.4f\n", green);
+	//printf("---> Blue clr: %4.4f\n", blue);
+
+	//int offs = 0;
+	//if (is_selected) offs = 55;
+
+	// TODO: IMPROVE THIS SHITTY COLOUR MAPPING
+	if (is_selected) {
+		clr.g += 10 + (unit*2) * index/2.0;
+		clr.r += 10 + unit * (index%2);
+		clr.b += 10 + unit * (index%2);
+	} else if (is_hovered) {
+		clr.r += 10 + (unit*2) * index/2.0;
+		clr.g += 10 + unit * (index%2);
+	} else {
+		clr.b += (unit*2.0) * index/2.0;
+		clr.g += unit * (index%2);
+	}
+
+	//clr.r = offs + red * (index / 9.0);
+	//clr.r = offs + green * ((index % 9) / 3.0);
+	//clr.r = offs + blue * ((index % 3) / 1.0);
+
+	return clr;
+}
 
 
 

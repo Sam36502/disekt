@@ -36,6 +36,7 @@ typedef enum {
 typedef struct {
 	int file_index;			// Which sector of the file this one is
 	DSK_DirEntry dir_entry;	// Which directory file this sector belongs to (if any; undefined if type is not a file type)
+	int dir_index;			// Entry number of this block's file in the directory
 	DSK_SectorType type;	// What type of sector this is (
 	REC_Status status;
 	uint16_t checksum;
@@ -77,6 +78,10 @@ const char *REC_GetStatusName(REC_Status status);
 //	Get a colour for a sector based on its state
 //
 Color REC_GetStatusColour(REC_Status status);
+
+//	Get a colour for a sector based on which file it belongs to
+//
+Color REC_GetFileColour(DSK_Directory dir, REC_Entry entry, bool is_hovered, bool is_selected);
 
 //	Draw a block of sector-data to the screen in fixed-width ASCII columns
 //
