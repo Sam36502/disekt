@@ -61,10 +61,10 @@ bool REC_Sector_HasData(FILE *f_disk, DSK_Position pos);
 //
 int REC_AnalyseDisk(FILE *f_disk, DSK_Directory dir, REC_Analysis *analysis);
 
-//	Get the state of a sector according to the Directory
+//	Get the full recon analysis entry for a given sector
 //
-//	Returns SECTOR_INVALID if pos is invalid
-REC_Status REC_GetStatus(REC_Analysis analysis, DSK_Position pos);
+//	Returns 0 on success
+int REC_GetInfo(REC_Analysis analysis, DSK_Position pos, REC_Entry *entry);
 
 //	Gets a constant char pointer to the name of a sector status
 //	

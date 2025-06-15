@@ -20,11 +20,16 @@ bool REC_Sector_HasData(FILE *f_disk, DSK_Position pos) {
 
 	for (int i=0; i<BLOCK_SIZE; i++) {
 		uint8_t byte;
-		fread(&byte, sizeof(uint8_t), 1, f_disk);
-		if (byte != 0x00) return false;
+		int err = fread(&byte, sizeof(uint8_t), 1, f_disk);
+		if (err != 1) {
+			printf("Failed to read byte while checking if sector is empty (returned %i)\n", err);
+		}
+		if (byte != 0x00) {
+			if (i != 1) return true;
+		}
 	}
 
-	return true;
+	return false;
 }
 
 void __drawhexbyte(Font font, int x, int y, uint8_t byte, Color clr) {
@@ -131,17 +136,31 @@ int REC_AnalyseDisk(FILE *f_disk, DSK_Directory dir, REC_Analysis *analysis) {
 			}
 
 			analysis->entries[index].status = stat;
+
+			DSK_SectorType type = SECTYPE_INVALID;
+			if (t == 18) {
+				if (s == 0) type = SECTYPE_BAM;
+				else if (has_data) type = SECTYPE_DIR;
+				else type = SECTYPE_NONE;
+			} else {
+				type = SECTYPE_USR;
+			}
+			analysis->entries[index].type = type;
+			
 		}
 	}
 
 	return 0;
 }
 
-REC_Status REC_GetStatus(REC_Analysis analysis, DSK_Position pos) {
+int REC_GetInfo(REC_Analysis analysis, DSK_Position pos, REC_Entry *entry) {
+	if (entry == NULL) return 1;
+
 	int index = DSK_PositionToIndex(pos);
-	if (index < 0) return SECSTAT_INVALID;
-	
-	return analysis.entries[index].status;
+	if (index < 0) return 2;
+
+	memcpy(entry, &(analysis.entries[index]), sizeof(REC_Entry));
+	return 0;
 }
 
 const char *REC_GetStatusName(REC_Status status) {

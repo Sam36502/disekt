@@ -68,8 +68,11 @@ int main(int argc, char *argv[]) {
 	bool hex_mode = false;
 	DSK_Position curr_sector = DSK_POSITION_BAM;
 	char *name = DSK_GetName(dir);
+
+	// Perform reconciliation analysis
 	REC_Analysis analysis;
-	REC_AnalyseDisk(f_disk, dir, &analysis);
+	err = REC_AnalyseDisk(f_disk, dir, &analysis);
+	if (err != 0) printf("Failed to analyse disk: Err-code %i\n", err);
 
 	uint8_t curr_data[BLOCK_SIZE];
 	DSK_File_GetData(f_disk, curr_sector, curr_data, BLOCK_SIZE);
@@ -110,8 +113,9 @@ int main(int argc, char *argv[]) {
 					if (pos.track == hov.track && pos.sector == hov.sector) dm = DSK_DRAW_HIGHLIGHT;
 					if (pos.track == curr_sector.track && pos.sector == curr_sector.sector) dm = DSK_DRAW_SELECTED;
 					
-					REC_Status stat = REC_GetStatus(analysis, pos);
-					DSK_Sector_Draw(dir, pos, dm, REC_GetStatusColour(stat));
+					REC_Entry info;
+					REC_GetInfo(analysis, pos, &info);
+					DSK_Sector_Draw(dir, pos, dm, REC_GetStatusColour(info.status));
 				}
 			}
 
@@ -134,9 +138,8 @@ int main(int argc, char *argv[]) {
 
 
 			// Draw Sector Info
-			//DSK_SectorInfo info = DSK_Sector_GetFullInfo(dir, f_disk, curr_sector); 
-			//REC_Entry info = REC_Get(dir, f_disk, curr_sector); 
-			REC_Status stat = REC_GetStatus(analysis, curr_sector); 
+			REC_Entry info;
+			REC_GetInfo(analysis, curr_sector, &info);
 			const int info_x = DISK_CENTRE_X * 2;
 			const int info_tab_x = info_x + (16 * 12);
 			DrawLineEx(
@@ -157,13 +160,13 @@ int main(int argc, char *argv[]) {
 
 			snprintf(buf, 256, "%16s", "Sector Type:");
 			DrawText(buf, info_x + 10, 10 + (line_num * 20), 20, BLACK);
-			//snprintf(buf, 256, "%s", DSK_Sector_GetTypeName(info.type));
-			//DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, ORANGE);
+			snprintf(buf, 256, "%s", DSK_Sector_GetTypeName(info.type));
+			DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, ORANGE);
 
 			snprintf(buf, 256, "%16s", "Sector Status:");
 			DrawText(buf, info_x + 10, 10 + (line_num * 20), 20, BLACK);
-			snprintf(buf, 256, "%s", REC_GetStatusName(stat));
-			DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, REC_GetStatusColour(stat));
+			snprintf(buf, 256, "%s", REC_GetStatusName(info.status));
+			DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, REC_GetStatusColour(info.status));
 
 			// Draw specific sector info
 			line_num = 10;
