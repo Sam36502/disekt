@@ -209,10 +209,9 @@ int main(int argc, char *argv[]) {
 					char *str = desc;
 					int prev = 0;
 					for (int i=0; i<desclen; i++) {
+						if (i < desclen-1 && i-prev < 40 && desc[i] != '\n') continue;
+						if (i >= desclen-1 || desc[i] == '\n') i++;
 						int len = i - prev;
-						if (i < desclen-1 && len < 40 && desc[i] != '\n') continue;
-
-						//if (desc[i] == '\n') len--;
 
 						snprintf(buf, 256, "%.*s", len, str);
 						DrawText(buf, info_x + 20, 10 + (line_num++ * 20), 20, DARKGRAY);
