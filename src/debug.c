@@ -1,7 +1,8 @@
 #include "../include/debug.h"
-#include <raylib.h>
 
 int g_debug_int = 0;
+double g_debug_prog = 1.0;
+static int __debug_prog_speed = 0;
 bool g_show_debug_view = 0;
 
 static int __last_key = 0;
@@ -10,8 +11,23 @@ bool DEBUG_HandleEvents(int pressed) {
 	//printf("---> Pressed char: '%c'\n", pressed);
 	if (pressed != 0) __last_key = pressed;
 
-	if (pressed == KEYCODE_DEBUG_INT_INC && g_debug_int < 100) { g_debug_int++; return true; }
-	if (pressed == KEYCODE_DEBUG_INT_DEC && g_debug_int > 0) { g_debug_int--; return true; }
+	static double t_last = 0;
+	double t_now = GetTime();
+	if (t_now - t_last > (50 - __debug_prog_speed) * (0.010)) {
+		//printf("---> Tick took %4.4f ms\n", elapsed * 1000.0);
+		g_debug_prog += 0.1;
+		if (g_debug_prog > 1.0) g_debug_prog -= 1.0;
+		if (g_debug_prog < 0.0) g_debug_prog += 1.0;
+		t_last = t_now;
+	}
+
+	if (IsKeyDown(KEYCODE_SHIFT)) {
+		if (pressed == KEYCODE_DEBUG_INT_INC && __debug_prog_speed < 100) { __debug_prog_speed++; return true; }
+		if (pressed == KEYCODE_DEBUG_INT_DEC && __debug_prog_speed > 0) { __debug_prog_speed--; return true; }
+	} else {
+		if (pressed == KEYCODE_DEBUG_INT_INC && g_debug_int < 100) { g_debug_int++; return true; }
+		if (pressed == KEYCODE_DEBUG_INT_DEC && g_debug_int > 0) { g_debug_int--; return true; }
+	}
 	if (pressed == KEYCODE_DEBUG_VIEW_TOGGLE) { g_show_debug_view = !g_show_debug_view; return true; }
 
 	return false;
@@ -98,5 +114,7 @@ void DEBUG_DrawDevInfo() {
 
 	sprintf(buf, "Debug int value: %i\n", g_debug_int);
 	DrawText(buf, 10, 120,  20, MAROON);
+	sprintf(buf, "Debug int prog speed: %i\n", __debug_prog_speed);
+	DrawText(buf, 10, 140,  20, MAROON);
 
 }

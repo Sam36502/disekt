@@ -4,11 +4,14 @@
 #include <stdbool.h>
 #include <raylib.h>
 
+Color __hsv_to_rgb(double, double, double);
+
 #include "../include/debug.h"
 #include "../include/disk.h"
 #include "../include/recon.h"
 
-#define FRAMERATE 30		// FPS
+
+#define FRAMERATE 60		// FPS
 
 #define SCREEN_WIDTH 1600
 #define SCREEN_HEIGHT 1000
@@ -36,7 +39,6 @@ int main(int argc, char *argv[]) {
 		usage();
 		return 1;
 	}
-
 
 	// TODO: parse options and handle parsing nyblog to disk image
 	// ---- Read nyblog
@@ -95,7 +97,7 @@ int main(int argc, char *argv[]) {
 		int key = GetKeyPressed();
 		if (true || key != 0) {
 			if (key == KEY_TOGGLE_HEX_MODE) { hex_mode = !hex_mode; }
-			if (key == KEY_TOGGLE_VIEW_MODE) { view_mode++; view_mode %= 3; }
+			if (key == KEY_TOGGLE_VIEW_MODE) { view_mode++; view_mode %= 4; }
 			redraw = true;
 
 			redraw |= DEBUG_HandleEvents(key);
@@ -113,8 +115,9 @@ int main(int argc, char *argv[]) {
 			REC_GetInfo(analysis, hov, &hov_info);
 
 			// Draw Disk-Sectors
-			for (int t=1; t<=35; t++) {
-				for (int s=0; s<21; s++) {
+			for (int t=MIN_TRACKS; t<=MAX_TRACKS; t++) {
+				int sc = DSK_Track_GetSectorCount(t);
+				for (int s=0; s<sc; s++) {
 					DSK_Position pos = { t, s };
 					DSK_DrawMode dm = DSK_DRAW_NORMAL;
 
@@ -135,6 +138,11 @@ int main(int argc, char *argv[]) {
 						case 2: clr = REC_GetFileColour(dir, info,
 							(hov_info.dir_index == info.dir_index),
 							(curr_info.dir_index == info.dir_index)
+						); break;
+						case 3: clr = __hsv_to_rgb(
+							(double) s / (double) sc,
+							(double) g_debug_int / 10,
+							(double)(t-1) / 34.0
 						); break;
 					}
 

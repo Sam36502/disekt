@@ -1,5 +1,5 @@
 #include "../include/recon.h"
-#include <raylib.h>
+#include <math.h>
 
 
 uint16_t REC_Checksum(void *ptr) {
@@ -268,40 +268,77 @@ Color REC_GetStatusColour(REC_Status status) {
 	return BLACK;
 }
 
+double __normalise(double x) {
+	if (x < 0.0) x = fabs(x);
+	if (x > 1.0) x -= (int) x;
+	return x;
+}
+
+double __clamp(double x) {
+	if (x < 0.0) return 0.0;
+	if (x > 1.0) return 1.0;
+	return x;
+}
+
+double __trapezoid_wave(double x) {
+	x = __normalise(x);
+
+	double m = x * 6;
+	int seg = m;
+	switch (seg) {
+		case 0: return m;
+		case 1: return 1.0;
+		case 2: return 1.0;
+		case 3: return 1.0 - (m - 3.0);
+		case 4: return 0.0;
+		case 5: return 0.0;
+	}
+	return x;
+}
+
+Color __hsv_to_rgb(double h, double s, double v) {
+	h = __normalise(h);
+	s = __normalise(s);
+	v = __normalise(v);
+
+	double c = v * s;
+	double m = v - c;
+	//double hp = h * 6;
+	//double x = c * (1.0 - fabs(modf(hp,) - 1.0));
+
+	//int seg = hp;
+	//double r = 0.0;
+	//double g = 0.0;
+	//double b = 0.0;
+	//switch (seg) {
+	//	case 0: r = c; g = x; b = 0; break;
+	//	case 1: r = x; g = c; b = 0; break;
+	//	case 2: r = 0; g = c; b = x; break;
+	//	case 3: r = 0; g = x; b = c; break;
+	//	case 4: r = x; g = 0; b = c; break;
+	//	case 5: r = c; g = 0; b = x; break;
+	//}
+
+	double r = c * __trapezoid_wave(h + 0.6666);
+	double g = c * __trapezoid_wave(h + 0.0001);
+	double b = c * __trapezoid_wave(h + 0.3333);
+
+	return (Color){
+		0xFF * (r + m),
+		0xFF * (g + m),
+		0xFF * (b + m),
+		0xFF
+	};
+}
+
 Color REC_GetFileColour(DSK_Directory dir, REC_Entry entry, bool is_hovered, bool is_selected) {
 	if (entry.dir_index < 0) return GRAY;
 
-	double unit = (255.0 * 255.0) / (double) dir.num_entries;
-	int index = entry.dir_index;
-
-	//double red = 200.0 / ((double)(dir.num_entries) / 9.0);
-	//double green = 200.0 / ((double)(dir.num_entries % 9) / 3.0);
-	//double blue = 200.0 / ((double)(dir.num_entries % 3) / 1.0);
-
-	Color clr = { 0, 0, 0, 0xFF };
-	//printf("---> Red clr: %4.4f\n", red);
-	//printf("---> Green clr: %4.4f\n", green);
-	//printf("---> Blue clr: %4.4f\n", blue);
-
-	//int offs = 0;
-	//if (is_selected) offs = 55;
-
-	// TODO: IMPROVE THIS SHITTY COLOUR MAPPING
-	if (is_selected) {
-		clr.g += 10 + (unit*2) * index/2.0;
-		clr.r += 10 + unit * (index%2);
-		clr.b += 10 + unit * (index%2);
-	} else if (is_hovered) {
-		clr.r += 10 + (unit*2) * index/2.0;
-		clr.g += 10 + unit * (index%2);
-	} else {
-		clr.b += (unit*2.0) * index/2.0;
-		clr.g += unit * (index%2);
-	}
-
-	//clr.r = offs + red * (index / 9.0);
-	//clr.r = offs + green * ((index % 9) / 3.0);
-	//clr.r = offs + blue * ((index % 3) / 1.0);
+	Color clr = __hsv_to_rgb(
+		(double) entry.dir_index / (double) dir.num_entries,
+		0.6 + (is_selected ? 0.4 : 0.0),
+		0.8 + (is_hovered ? 0.1 : 0.0) + (is_selected ? 0.1 : 0.0)
+	);
 
 	return clr;
 }
