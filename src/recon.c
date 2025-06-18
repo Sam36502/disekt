@@ -167,10 +167,15 @@ int REC_AnalyseDisk(FILE *f_disk, DSK_Directory dir, REC_Analysis *analysis) {
 			// TODO: Properly analyse file blocks based on their type
 			// For now: Count them as "good" so long as their next block pointer is valid
 			if (num < entry.block_count-1) {
-				if (DSK_IsPositionValid(pos)) analysis->entries[index].status = SECSTAT_GOOD;
-				else analysis->entries[index].status = SECSTAT_BAD;
+				if (DSK_IsPositionValid(pos)) {
+					analysis->entries[index].status = SECSTAT_GOOD;
+				} else {
+					analysis->entries[index].status = SECSTAT_BAD;
+				}
 			} else {
 				if (pos.track == 0x00 && pos.sector == 0xFF) analysis->entries[index].status = SECSTAT_GOOD;
+				// TODO: Does it matter in the last block of a file?
+				// Need to find out...
 			}
 
 			//printf("---> Next block in file: [% 3i/% 3i]\n", pos.track, pos.sector);
@@ -332,12 +337,13 @@ Color __hsv_to_rgb(double h, double s, double v) {
 }
 
 Color REC_GetFileColour(DSK_Directory dir, REC_Entry entry, bool is_hovered, bool is_selected) {
-	if (entry.dir_index < 0) return GRAY;
+	if (entry.dir_index < 0) return LIGHTGRAY;
 
 	Color clr = __hsv_to_rgb(
 		(double) entry.dir_index / (double) dir.num_entries,
-		0.6 + (is_selected ? 0.4 : 0.0),
-		0.8 + (is_hovered ? 0.1 : 0.0) + (is_selected ? 0.1 : 0.0)
+		//(double) entry.dir_entry.pos.track / (double) 15,
+		0.5 + (is_selected ? 0.5 : 0.0),
+		0.7 + (!is_selected && is_hovered ? 0.1 : 0.0) + (is_selected ? 0.3 : 0.0)
 	);
 
 	return clr;
