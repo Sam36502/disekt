@@ -12,6 +12,7 @@
 #include <string.h>
 #include "../include/debug.h"
 #include "../include/disk.h"
+#include "../include/recon.h"
 
 
 #define NYBLOG_BIN_MAGIC (uint32_t)(*(uint32_t *)"NYBB")
@@ -20,6 +21,13 @@
 //	
 //	Struct Declarations
 //	
+
+typedef enum {
+	NYBLOG_INVALID,
+	NYBLOG_INFO,
+	NYBLOG_BLOCK_START,
+	NYBLOG_BLOCK_END,
+} NYB_LogLineType;
 
 typedef struct {
 	uint8_t track_num;
@@ -34,15 +42,31 @@ typedef struct {
 //	Function Declarations
 //	
 
+//	Parses a single line of a file containing a NybLog info entry
+//
+//	Intended to be used internally
+int NYB_ParseLogLine(char *line, NYB_LogLineType *type, char data[26][32]);
+
+//	Parses a single line of hex data from a NybLog file
+//
+//	Intended to be used internally
+int NYB_ParseDataLine(char *line, uint8_t *offset, uint8_t data[16]);
+
+//	Reads text from a file pointer until it's read a complete block
+//
+//	Intended to be used internally
+int NYB_ParseLogBlock(FILE *f_log, NYB_DataBlock *block);
 
 //	Function to open and parse a transmission log
 //
-//	Returns 0 on success, otherwise:
-//		1 = input filename, or buffer is null;
-//		2 = buf_len is less than 1;
-//		3 = input filename couldn't be read;
-//		-1 = succeeded, but found more blocks than could fit in the provided buffer
-int NYB_ParseLog(const char *filename, NYB_DataBlock *block_buf, int buf_len);
+//	`data_offset` is a pointer to a file offset index
+//	if it's not NULL, the file will first go to the provided offset before beginning to read
+//	and once it's filled the provided buffer, it'll write the current file position to it.
+//	This lets you easily pick up the parsing of a file part of the way through,
+//	so you don't have to parse large logs all at once.
+//
+//	Returns the number of blocks successfully read or -1 if it fails
+int NYB_ParseLog(const char *filename, NYB_DataBlock *block_buf, int buf_len, long *data_offset);
 
 //	Function to read a binary block from a meta-disk file
 //
@@ -56,7 +80,7 @@ int NYB_Meta_WriteBlock(FILE *f_meta, NYB_DataBlock *block);
 
 //	Function to write disk data to a `.d64` disk image
 //
-//	WARNING! Overwrites
+//	WARNING! Overwrites the provided block location
 //
 //	Returns 0 on success
 //		1 = Input was NULL

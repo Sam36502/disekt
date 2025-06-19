@@ -16,6 +16,7 @@
 
 extern int g_debug_int;
 extern double g_debug_prog;
+extern bool g_verbose_log;
 extern bool g_show_debug_view;
 
 //	Handles events that impact the debug variables

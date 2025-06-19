@@ -3,7 +3,8 @@
 int g_debug_int = 0;
 double g_debug_prog = 1.0;
 static int __debug_prog_speed = 0;
-bool g_show_debug_view = 0;
+bool g_verbose_log = false;
+bool g_show_debug_view = false;
 
 static int __last_key = 0;
 

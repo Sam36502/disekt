@@ -219,7 +219,7 @@ char *DSK_GetName(DSK_Directory dir) {
 }
 
 void DSK_PrintBAM(DSK_BAM bam) {
-	printf(" BAM Contents:\n");
+	printf("\n BAM Contents:\n");
 	printf("---------------------------------\n");
 	for (int i=0; i<MAX_TRACKS; i++) {
 		uint8_t sec_free = bam.entries[i] & 0xFF;

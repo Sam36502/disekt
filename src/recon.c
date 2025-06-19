@@ -308,21 +308,6 @@ Color __hsv_to_rgb(double h, double s, double v) {
 
 	double c = v * s;
 	double m = v - c;
-	//double hp = h * 6;
-	//double x = c * (1.0 - fabs(modf(hp,) - 1.0));
-
-	//int seg = hp;
-	//double r = 0.0;
-	//double g = 0.0;
-	//double b = 0.0;
-	//switch (seg) {
-	//	case 0: r = c; g = x; b = 0; break;
-	//	case 1: r = x; g = c; b = 0; break;
-	//	case 2: r = 0; g = c; b = x; break;
-	//	case 3: r = 0; g = x; b = c; break;
-	//	case 4: r = x; g = 0; b = c; break;
-	//	case 5: r = c; g = 0; b = x; break;
-	//}
 
 	double r = c * __trapezoid_wave(h + 0.6666);
 	double g = c * __trapezoid_wave(h + 0.0001);

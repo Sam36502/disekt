@@ -1,96 +1,152 @@
 #include "../include/nyblog.h"
+#include <raylib.h>
 
-int NYB_ParseLog(const char *filename, NYB_DataBlock *block_buf, int buf_len) {
-	if (filename == NULL || block_buf == NULL) return 1;
-	if (buf_len < 1) return 2;
+int NYB_ParseLogLine(char *line, NYB_LogLineType *type, char data[26][32]) {
+	if (line == NULL) return 1;
 
-	// Read input file
-	FILE *f = fopen(filename, "r");
-	if (f == NULL) return 3;
+	// Reset data strings
+	for (char c='A'; c<='Z'; c++) {
+		data[c - 'A'][0] = '\0';
+	}
 
-	char line_buf[128];
-	enum { NO_BLOCK, START_BLOCK, IN_BLOCK, END_BLOCK } parse_state = NO_BLOCK;
-	int line_num = 0;
-	int curr_block_index = 0;
-	int data_index = 0;
-	while (!feof(f)) {
-		line_num++;
-		fgets(line_buf, 127, f);
+	// Get text within >>> angle brackets <<<
+	char *start = strstr(line, ">>>");
+	if (start == NULL) return 3;
+	start += 3;
 
-		char *line = &line_buf[0];
+	char *end = strstr(start, "<<<");
+	if (end == NULL) return 3;
+	end -= 1;
 
-		// Trim spaces in beginning
-		while (isspace(*line)) line++;
-		if (*line == '\0') continue; // Ignore empty lines
+	char str[128];
+	int len = (end-start);
+	strncpy(str, start,  128 * sizeof(char));
+	str[len] = '\0';
 
-		switch (parse_state) {
+	char *tok = strtok(str, " :;");
+	if (tok == NULL) return 4;
 
-			case NO_BLOCK: {
-				if (strncmp(line, ">>> BLOCK-START: T=", 19 * sizeof(char)) != 0) continue;
+	*type = NYBLOG_INVALID;
+	if (strncmp(tok, "INFO", 128 * sizeof(char)) == 0) *type = NYBLOG_INFO;
+	else if (strncmp(tok, "BLOCK-START", 128 * sizeof(char)) == 0) *type = NYBLOG_BLOCK_START;
+	else if (strncmp(tok, "BLOCK-END", 128 * sizeof(char)) == 0) *type = NYBLOG_BLOCK_END;
 
-				line += 19;
-				int semi = 0;
-				while (line[semi] != ';' && line[semi] != '\0') semi++;
-				line[semi] = '\0';
-				block_buf[curr_block_index].track_num = strtol(line, NULL, 10);
-				line = &line[semi+4];
-				block_buf[curr_block_index].sector_index = strtol(line, NULL, 10);
-				//printf("---> Started block for track %i, sector %i\n",
-				//	block_buf[curr_block_index].track_num,
-				//	block_buf[curr_block_index].sector_index
-				//);
-				parse_state = START_BLOCK;
-			} continue;
+	tok = strtok(NULL, "=;");
+	while (tok != NULL) {
+		while(isspace(tok[0])) tok++;
 
-			case START_BLOCK: {
-				if (line[0] != '[') continue;
-				data_index = 0;
-				parse_state = IN_BLOCK;
-			}
+		char key = tok[0];
+		if (key < 'A' || key > 'Z') continue;
 
-			case IN_BLOCK: {
-				while (*line != '\n' && *line != '\0') {
-					if (*line != ' ') { line++; continue; }
-					line++;
+		tok = strtok(NULL, "=;");
+		while(isspace(tok[0])) tok++;
+		int len = strlen(tok);
+		strncpy(data[key - 'A'], tok, 32 * sizeof(char));
+		data[key - 'A'][len] = '\0';
 
-					int byte = strtoul(line, NULL, 16);
-					block_buf[curr_block_index].data[data_index++] = byte;
-
-					if (data_index >= 256) {
-						parse_state = END_BLOCK;
-						break;
-					}
-				}
-			} continue;
-
-			case END_BLOCK: {
-				if (strncmp(line, ">>> BLOCK-END; C=0x", 19 * sizeof(char)) != 0) continue;
-
-				line += 19;
-				int semi = 0;
-				while (line[semi] != ';' && line[semi] != '\0') semi++;
-				line[semi] = '\0';
-				block_buf[curr_block_index].checksum = strtoul(line, NULL, 16);
-				line = &line[semi+4];
-				block_buf[curr_block_index].err_code = strtoul(line, NULL, 10);
-				//printf("---> ended block; CHK: 0x%04X, ERR#%i\n",
-				//	block_buf[curr_block_index].checksum,
-				//	block_buf[curr_block_index].err_code
-				//);
-
-				curr_block_index++;
-				parse_state = NO_BLOCK;
-			} break;
-
-		}
-
-		// DEBUG:
-		//printf("---> [% 5i] '%s'\n", line_num, line);
-		//if (line_num > 20) return 0;
-
+		tok = strtok(NULL, "=;");
 	}
 
 	return 0;
+}
+
+int NYB_ParseDataLine(char *line, uint8_t *offset, uint8_t data[16]) {
+	if (line == NULL) return 1;
+
+	char str[128];
+	int len = strlen(line);
+	strncpy(str, line,  128 * sizeof(char));
+	str[len] = '\0';
+
+	char *tok = strtok(str, " ");
+	if (tok == NULL) return 2;
+	if (strlen(tok) != 6 || tok[0] != '[' || tok[5] != ']') return 2;
+	*offset = strtol(tok+1, NULL, 16);
+
+	int i=0;
+	tok = strtok(NULL, " ");
+	while (tok != NULL) {
+		data[i] = strtol(tok, NULL, 16);
+		tok = strtok(NULL, " ");
+		i++;
+	}
+
+	return 0;
+}
+
+int NYB_ParseLogBlock(FILE *f_log, NYB_DataBlock *block) {
+	if (f_log == NULL || block == NULL) return 1;
+
+	char line[128];
+	bool in_block = false;
+	char *lp = fgets(line, 128, f_log);
+	while (lp != NULL) {
+
+		// Try parsing as log-line
+		NYB_LogLineType type;
+		char data[26][32];
+		int err = NYB_ParseLogLine(line, &type, data);
+		if (err == 0 && type != NYBLOG_INVALID) {
+			switch (type) {
+				case NYBLOG_INFO: {
+					if (g_verbose_log) printf(" - Info Message in log file: %s\n", data['M' - 'A']);
+				}; break;
+
+				case NYBLOG_BLOCK_START: {
+					block->track_num = strtol(data['T' - 'A'], NULL, 10);
+					block->sector_index = strtol(data['S' - 'A'], NULL, 10);
+					in_block = true;
+				}; break;
+
+				case NYBLOG_BLOCK_END: {
+					block->err_code = strtol(data['E' - 'A'], NULL, 10);
+					block->checksum = strtol(data['C' - 'A'], NULL, 16);
+					return 0;
+				}; break;
+
+				case NYBLOG_INVALID: { printf("IMPOSSIBLE STATE ACHIEVED! CONGLATURATIONS YOU WIN!!\n"); };
+			}
+		}
+
+		// Try parsing data-line
+		if (in_block) {
+			uint8_t offset = 0x00;
+			uint8_t data[16];
+			err = NYB_ParseDataLine(line, &offset, data);
+			if (err == 0) {
+				memcpy(block->data + offset, data, 16);
+			}
+		}
+
+		lp = fgets(line, 128, f_log);
+	}
+
+	return 0;
+}
+
+int NYB_ParseLog(const char *filename, NYB_DataBlock *block_buf, int buf_len, long *data_offset) {
+	if (filename == NULL || block_buf == NULL) return -1;
+	if (buf_len < 1) return -1;
+
+	FILE *f_log = fopen(filename, "r+b");
+	if (f_log == NULL) return -1;
+
+	if (data_offset != NULL) fseek(f_log, *data_offset, SEEK_SET);
+	fread(NULL, 0, 0, f_log);
+	if (feof(f_log)) return 0;
+
+	int count = 0;
+	for (int i=0; i<buf_len; i++) {
+		int err = NYB_ParseLogBlock(f_log, &block_buf[i]);
+		if (err != 0) return count;
+		if (feof(f_log)) return count;
+		count++;
+	}
+
+	if (data_offset != NULL) *data_offset = ftell(f_log);
+
+	fclose(f_log);
+	return count;
 }
 
 int NYB_Meta_ReadBlock(FILE *f_meta, NYB_DataBlock *block) {
@@ -114,24 +170,40 @@ int NYB_Meta_WriteBlock(FILE *f_meta, NYB_DataBlock *block) {
 }
 
 int NYB_WriteToDiskImage(char *filename, NYB_DataBlock *block_buf, int buf_len) {
-	FILE * f_disk = fopen(filename, "ab");
-	if (f_disk == NULL) return 1;
+	if (block_buf == NULL) return 1;
 
+	FILE * f_disk;
+	if (FileExists(filename)) f_disk = fopen(filename, "r+b");
+	else f_disk = fopen(filename, "w+b");
+	 
+	if (f_disk == NULL) return 2;
+
+	if (g_verbose_log) printf("\nWriting parsed data to '%s'...\n", filename);
 	for (int i=0; i<buf_len; i++) {
 		NYB_DataBlock block = block_buf[i];
-		if (block.track_num < 1 || block.track_num > 35) continue;
+		uint16_t chk = REC_Checksum(block.data);
 
-		//printf("[% 5i] Writing Block (% 3i/% 3i); 0x%04X; Err#%i\n", i,
-		//	block.track_num, block.sector_index,
-		//	block.checksum, block.err_code
-		//);
-		//uint16_t chk = REC_Checksum(block.data);
-		//printf("       Recalculated checksum: 0x%04X [%s]\n", chk, (chk == block.checksum) ? "MATCH" : "FAIL");
+		if (g_verbose_log) {
+			printf("  [% 3i/% 3i] ", block.track_num, block.sector_index);
+			if (block.err_code != 0) {
+				printf("Skipping due to disk-read error (code %i)\n", block.err_code);
+				continue;
+			}
+			if (block.checksum != chk) {
+				printf("Skipping due to checksum mismatch (0x%04X =/= 0x%04X)\n", block.checksum, chk);
+				continue;
+			}
+
+			printf("Written to disk!\n");
+		}
 
 		DSK_File_SeekPosition(f_disk, (DSK_Position){ block.track_num, block.sector_index });
 		fwrite(block.data, sizeof(uint8_t), BLOCK_SIZE, f_disk);
 	}
+
+	// Seek to end of disk to create blank sectors
 	DSK_File_SeekPosition(f_disk, (DSK_Position){ MAX_TRACKS, 17 });
+	fseek(f_disk, 256, SEEK_CUR);
 
 	fclose(f_disk);
 
