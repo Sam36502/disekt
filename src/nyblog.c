@@ -156,17 +156,61 @@ int NYB_Meta_ReadBlock(FILE *f_meta, NYB_DataBlock *block) {
 	fseek(f_meta, 0l, SEEK_SET);
 	uint32_t header[4];
 	size_t r = fread(header, sizeof(uint32_t), 4, f_meta);
-	if (r < sizeof(uint32_t) * 4) return 2;
+	if (r < 4) return 2;
 	if (header[0] != NYBLOG_BIN_MAGIC) return 2;
 
-	//long offs_data = header[1];
+	long offs_data = header[1];
 
-	//	Read blocks until we find 
+	//	Find and read selected block
+	DSK_Position blockpos = { block->track_num, block->sector_index };
+	int block_index = DSK_PositionToIndex(blockpos);
+	if (block_index < 0) {
+		printf("Error: Failed to read sector metadata from file; Invalid position [% i/% i]\n", blockpos.track, blockpos.sector);
+		return 2;
+	}
+
+	fseek(f_meta, offs_data + (block_index * sizeof(NYB_DataBlock)), SEEK_SET);
+	fread(block, sizeof(NYB_DataBlock), 1, f_meta);
+
 	return 0;
 }
 
 int NYB_Meta_WriteBlock(FILE *f_meta, NYB_DataBlock *block) {
-	return 99;
+	if (f_meta == NULL || block == NULL) return 1;
+
+	//	Parse File Header
+	uint32_t header[4];
+	fseek(f_meta, 0l, SEEK_SET);
+	size_t r = fread(header, sizeof(uint32_t), 4, f_meta);
+	if (r < 4 || header[0] != NYBLOG_BIN_MAGIC) {
+		if (g_verbose_log) printf("Warn: No header in metadata file; creating one...\n");
+
+		// Create Header
+		header[0] = NYBLOG_BIN_MAGIC;
+		header[1] = 16 * 4;	// Leave a few lines blank just in case
+		header[2] = 0x00000000; // Unused for now
+		header[3] = 0x00000000;
+		fseek(f_meta, 0l, SEEK_SET);
+		fwrite(header, sizeof(uint32_t), 4, f_meta);
+	}
+
+	long offs_data = header[1];
+
+	//	Find and read selected block
+	DSK_Position blockpos = { block->track_num, block->sector_index };
+	int block_index = DSK_PositionToIndex(blockpos);
+	if (block_index < 0) {
+		printf("Error: Failed to write block metadata to file; Invalid position [% i/% i]\n", blockpos.track, blockpos.sector);
+		return 2;
+	}
+
+	// Make sure type byte is nonzero
+	if (block->block_status == 0x00) block->block_status = 0x01;
+	
+	fseek(f_meta, offs_data + (block_index * sizeof(NYB_DataBlock)), SEEK_SET);
+	fwrite(block, sizeof(NYB_DataBlock), 1, f_meta);
+
+	return 0;
 }
 
 int NYB_WriteToDiskImage(char *filename, NYB_DataBlock *block_buf, int buf_len) {
@@ -181,7 +225,7 @@ int NYB_WriteToDiskImage(char *filename, NYB_DataBlock *block_buf, int buf_len) 
 	if (g_verbose_log) printf("\nWriting parsed data to '%s'...\n", filename);
 	for (int i=0; i<buf_len; i++) {
 		NYB_DataBlock block = block_buf[i];
-		uint16_t chk = REC_Checksum(block.data);
+		uint16_t chk = DSK_Checksum(block.data);
 
 		if (g_verbose_log) {
 			printf("  [% 3i/% 3i] ", block.track_num, block.sector_index);
@@ -202,11 +246,15 @@ int NYB_WriteToDiskImage(char *filename, NYB_DataBlock *block_buf, int buf_len) 
 	}
 
 	// Seek to end of disk to create blank sectors
-	DSK_File_SeekPosition(f_disk, (DSK_Position){ MAX_TRACKS, 17 });
+	DSK_File_SeekPosition(f_disk, (DSK_Position){ MAX_TRACKS, 16 });
 	fseek(f_disk, 256, SEEK_CUR);
+
+	uint8_t lastbyte;
+	fread(&lastbyte, sizeof(uint8_t), 1, f_disk);
+	fseek(f_disk, -1, SEEK_CUR);
+	fwrite(&lastbyte, sizeof(uint8_t), 1, f_disk);
 
 	fclose(f_disk);
 
 	return 0;
 }
-

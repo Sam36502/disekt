@@ -16,7 +16,7 @@ LDLIBS=-lm -lraylib
 
 run: $(BIN)
 	@echo -e '\n--------------------------------------------------'
-	$(BIN) --debug -l dumps/track_18.txt disks/testout2.d64
+	$(BIN) --debug -r disks/testout2.r64 disks/testout2.d64
 
 $(BIN): $(OBJ) | $(BIN_DIR)
 	$(CC) $^ $(LDLIBS) -o $@

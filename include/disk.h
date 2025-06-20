@@ -93,6 +93,10 @@ typedef struct {
 
 //	---- Sector Utilities
 
+//	Calculates the fletcher-checksum of a 256-Byte block of data
+//
+uint16_t DSK_Checksum(void *ptr);
+
 //	Gets the number of sectors in a track
 //
 //	Returns 0 for invalid track numbers (t<1 or t>35)

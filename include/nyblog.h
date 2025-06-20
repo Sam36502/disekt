@@ -12,7 +12,6 @@
 #include <string.h>
 #include "../include/debug.h"
 #include "../include/disk.h"
-#include "../include/recon.h"
 
 
 #define NYBLOG_BIN_MAGIC (uint32_t)(*(uint32_t *)"NYBB")
@@ -30,10 +29,12 @@ typedef enum {
 } NYB_LogLineType;
 
 typedef struct {
+	uint8_t block_status;	// Determines whether this block is readable in the file or not
 	uint8_t track_num;
 	uint8_t sector_index;
 	uint8_t err_code;
 	uint16_t checksum;
+	uint8_t __padding1[10];
 	uint8_t data[BLOCK_SIZE];
 } NYB_DataBlock;
 

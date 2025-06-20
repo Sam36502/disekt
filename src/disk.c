@@ -1,6 +1,21 @@
 #include "../include/disk.h"
 #include <raylib.h>
 
+
+uint16_t DSK_Checksum(void *ptr) {
+	uint8_t lo = 0x00;
+	uint8_t hi = 0x00;
+
+	uint8_t *bp = ptr;
+	for (int i=0; i<256; i++) {
+		lo += bp[i];
+		hi += lo;
+	}
+
+	return (uint16_t)(hi) << 8 | (uint16_t)(lo);
+}
+
+
 int DSK_Track_GetSectorCount(int track_num) {
 	if (track_num < MIN_TRACKS || track_num > MAX_TRACKS) return 0;
 

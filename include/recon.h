@@ -12,6 +12,7 @@
 #include "../include/debug.h"
 #include "../include/arc.h"
 #include "../include/disk.h"
+#include "../include/nyblog.h"
 
 #define MAX_ANALYSIS_ENTRIES 1024
 
@@ -25,8 +26,8 @@ typedef enum {
 	SECSTAT_UNEXPECTED = 0x11,
 	SECSTAT_MISSING = 0x20,
 	SECSTAT_PRESENT = 0x21,
-	SECSTAT_CORRUPTED = 0x30,
-	SECSTAT_CONFIRMED = 0x31,
+	SECSTAT_CORRUPTED = 0x30,	// Checksum mismatch
+	SECSTAT_CONFIRMED = 0x31,	// Checksum matches
 	SECSTAT_BAD = 0x40,
 	SECSTAT_GOOD = 0x41,
 	SECSTAT_UNKNOWN = 0xFF,
@@ -40,6 +41,7 @@ typedef struct {
 	DSK_SectorType type;	// What type of sector this is (
 	REC_Status status;
 	uint16_t checksum;
+	uint8_t disk_err;		// Error code from the disk if available (OR'd with 0x80 to distinguish from not found)
 } REC_Entry;
 
 //	Contains the results of analysing the disk;
@@ -53,10 +55,6 @@ typedef struct {
 //	Function Declarations
 //	
 
-//	Calculates the fletcher-checksum of a 256-Byte block of data
-//
-uint16_t REC_Checksum(void *ptr);
-
 //	Checks if a sector has data (non-zero bytes)
 //
 //	Returns false if `f_disk` is NULL
@@ -64,7 +62,7 @@ bool REC_Sector_HasData(FILE *f_disk, DSK_Position pos);
 
 //	Analyses a disk and stores the results in a REC_Analysis struct
 //
-int REC_AnalyseDisk(FILE *f_disk, DSK_Directory dir, REC_Analysis *analysis);
+int REC_AnalyseDisk(FILE *f_disk, FILE *f_meta, DSK_Directory dir, REC_Analysis *analysis);
 
 //	Get the full recon analysis entry for a given sector
 //

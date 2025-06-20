@@ -2,19 +2,6 @@
 #include <math.h>
 
 
-uint16_t REC_Checksum(void *ptr) {
-	uint8_t lo = 0x00;
-	uint8_t hi = 0x00;
-
-	uint8_t *bp = ptr;
-	for (int i=0; i<256; i++) {
-		lo += bp[i];
-		hi += lo;
-	}
-
-	return (uint16_t)(hi) << 8 | (uint16_t)(lo);
-}
-
 bool REC_Sector_HasData(FILE *f_disk, DSK_Position pos) {
 	int err = DSK_File_SeekPosition(f_disk, pos);
 	if (err != 0) return false;
@@ -110,7 +97,7 @@ void REC_DrawData(int x, int y, void *buf, size_t bufsz, bool hex_mode, bool sho
 
 }
 
-int REC_AnalyseDisk(FILE *f_disk, DSK_Directory dir, REC_Analysis *analysis) {
+int REC_AnalyseDisk(FILE *f_disk, FILE *f_meta, DSK_Directory dir, REC_Analysis *analysis) {
 	if (f_disk == NULL || analysis == NULL) return 1;
 
 	// Initialise analysis struct
@@ -192,6 +179,23 @@ int REC_AnalyseDisk(FILE *f_disk, DSK_Directory dir, REC_Analysis *analysis) {
 			int index = DSK_PositionToIndex(pos);
 			if (index < 0) continue;
 
+			// Get the metadata entry if available
+			analysis->entries[index].checksum = 0x0000;
+			analysis->entries[index].disk_err = 0x00;
+			if (f_meta != NULL) {
+				NYB_DataBlock block;
+				block.track_num = t;
+				block.sector_index = s;
+				int err = NYB_Meta_ReadBlock(f_meta, &block);
+				if (err == 0 && block.block_status != 0x00) {
+					analysis->entries[index].checksum = block.checksum;
+					if (block.checksum != DSK_Checksum(block.data)) analysis->entries[index].status = SECSTAT_CORRUPTED;
+					else analysis->entries[index].status = SECSTAT_CONFIRMED;
+
+					analysis->entries[index].disk_err = block.err_code | 0x80;
+				}
+			}
+
 			//if (analysis->entries[index].type != SECTYPE_INVALID) continue; // Skip entries we've already checked
 
 			bool has_data = REC_Sector_HasData(f_disk, pos);
@@ -260,7 +264,7 @@ Color REC_GetStatusColour(REC_Status status) {
 		case SECSTAT_EMPTY: return GRAY;
 		case SECSTAT_UNEXPECTED: return PURPLE;
 		case SECSTAT_MISSING: return ORANGE;
-		case SECSTAT_PRESENT: return YELLOW;
+		case SECSTAT_PRESENT: return GOLD;
 		case SECSTAT_BAD: return RED;
 		case SECSTAT_GOOD: return GREEN;
 		case SECSTAT_CORRUPTED: return MAROON;

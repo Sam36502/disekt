@@ -55,6 +55,20 @@ int main(int argc, char *argv[]) {
 		// Parse log file into blocks
 		NYB_DataBlock block_buf[256];
 		long offset = 0;
+		
+		FILE *f_meta = NULL;
+		if (recon_filename != NULL) {
+			if (FileExists(recon_filename)) {
+				f_meta = fopen(recon_filename, "r+b");
+			} else {
+				f_meta = fopen(recon_filename, "wb");
+			}
+
+			if (f_meta == NULL) {
+				printf("Error: Failed to open recon file '%s' for writing\n", recon_filename);
+				usage();
+			}
+		}
 
 		int blocks_read = 256;
 		while (blocks_read >= 256) {
@@ -70,9 +84,15 @@ int main(int argc, char *argv[]) {
 				printf("Error: Failed to write to disk image '%s'\n", disk_filename);
 				usage();
 			}
+
+			// Write to recon file if set
+			if (f_meta != NULL) {
+				for (int i=0; i<blocks_read; i++) {
+					NYB_Meta_WriteBlock(f_meta, &(block_buf[i]));
+				}
+			}
 		}
 
-		// TODO: Write to recon file if set
 	}
 
 	// Read the disk file
@@ -80,6 +100,16 @@ int main(int argc, char *argv[]) {
 	if (f_disk == NULL) {
 		printf("Error: Failed to read input file '%s'\n", disk_filename);
 		usage();
+	}
+
+	// Read the meta file
+	FILE *f_meta = NULL;
+	if (recon_filename != NULL) {
+		f_meta = fopen(recon_filename, "rb");
+		if (f_meta == NULL) {
+			printf("Error: Failed to read input metadata file '%s'\n", recon_filename);
+			usage();
+		}
 	}
 
 	DSK_Directory dir;
@@ -105,11 +135,14 @@ int main(int argc, char *argv[]) {
 	// Perform reconciliation analysis
 	DSK_Position curr_sector = DSK_POSITION_BAM;
 	REC_Analysis analysis;
-	err = REC_AnalyseDisk(f_disk, dir, &analysis);
+	err = REC_AnalyseDisk(f_disk, f_meta, dir, &analysis);
 	if (err != 0) printf("Failed to analyse disk: Err-code %i\n", err);
 
 	uint8_t curr_data[BLOCK_SIZE];
+	uint16_t curr_checksum = 0x0000;
 	DSK_File_GetData(f_disk, curr_sector, curr_data, BLOCK_SIZE);
+	curr_checksum = DSK_Checksum(curr_data);
+	if (f_meta != NULL) fclose(f_meta);
 	fclose(f_disk);
 
 	bool redraw = true;
@@ -132,6 +165,7 @@ int main(int argc, char *argv[]) {
 
 			f_disk = fopen(disk_filename, "rb");
 			DSK_File_GetData(f_disk, curr_sector, curr_data, BLOCK_SIZE);
+			curr_checksum = DSK_Checksum(curr_data);
 			fclose(f_disk);
 		}
 
@@ -243,12 +277,33 @@ int main(int argc, char *argv[]) {
 			snprintf(buf, 256, "%16s", "Sector Type:");
 			DrawText(buf, info_x + 10, 10 + (line_num * 20), 20, BLACK);
 			snprintf(buf, 256, "%s", DSK_Sector_GetTypeName(curr_info.type));
-			DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, ORANGE);
+			DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, DSK_Sector_GetTypeColour(curr_info.type));
 
 			snprintf(buf, 256, "%16s", "Sector Status:");
 			DrawText(buf, info_x + 10, 10 + (line_num * 20), 20, BLACK);
 			snprintf(buf, 256, "%s", REC_GetStatusName(curr_info.status));
 			DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, REC_GetStatusColour(curr_info.status));
+
+			snprintf(buf, 256, "%16s", "Checksum:");
+			DrawText(buf, info_x + 10, 10 + (line_num * 20), 20, BLACK);
+			if (recon_filename != NULL && (curr_info.disk_err & 0x80) != 0x00) {
+				snprintf(buf, 256, "0x%04X [%s]", curr_checksum, (curr_checksum == curr_info.checksum) ? "MATCH":"BREAK");
+				DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, REC_GetStatusColour(curr_info.status));
+			} else {
+				snprintf(buf, 256, "0x%04X", curr_checksum);
+				DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, DARKGRAY);
+			}
+
+			snprintf(buf, 256, "%16s", "Disk Error:");
+			DrawText(buf, info_x + 10, 10 + (line_num * 20), 20, BLACK);
+			if (recon_filename != NULL && (curr_info.disk_err & 0x80) != 0) {
+				uint8_t e = curr_info.disk_err & ~0x80;
+				snprintf(buf, 256, "%i [%s]", e, (e == 0x00) ? "OK":"ERR");
+				DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, REC_GetStatusColour(curr_info.status));
+			} else {
+				snprintf(buf, 256, "%i", curr_info.disk_err);
+				DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, DARKGRAY);
+			}
 
 			// Draw specific sector info
 			line_num += 2;
