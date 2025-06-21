@@ -193,6 +193,8 @@ int REC_AnalyseDisk(FILE *f_disk, FILE *f_meta, DSK_Directory dir, REC_Analysis 
 					else analysis->entries[index].status = SECSTAT_CONFIRMED;
 
 					analysis->entries[index].disk_err = block.err_code | 0x80;
+					analysis->entries[index].disk_err |= block.parse_error;
+					if (block.parse_error != 0x00) analysis->entries[index].status = SECSTAT_CORRUPTED;
 				}
 			}
 

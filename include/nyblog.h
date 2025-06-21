@@ -26,6 +26,8 @@ typedef enum {
 	NYBLOG_INFO,
 	NYBLOG_BLOCK_START,
 	NYBLOG_BLOCK_END,
+	NYBLOG_WARNING,
+	NYBLOG_ERROR,
 } NYB_LogLineType;
 
 typedef struct {
@@ -34,7 +36,8 @@ typedef struct {
 	uint8_t sector_index;
 	uint8_t err_code;
 	uint16_t checksum;
-	uint8_t __padding1[10];
+	uint8_t parse_error;
+	uint8_t __padding1[9];
 	uint8_t data[BLOCK_SIZE];
 } NYB_DataBlock;
 

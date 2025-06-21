@@ -30,6 +30,8 @@ int NYB_ParseLogLine(char *line, NYB_LogLineType *type, char data[26][32]) {
 	if (strncmp(tok, "INFO", 128 * sizeof(char)) == 0) *type = NYBLOG_INFO;
 	else if (strncmp(tok, "BLOCK-START", 128 * sizeof(char)) == 0) *type = NYBLOG_BLOCK_START;
 	else if (strncmp(tok, "BLOCK-END", 128 * sizeof(char)) == 0) *type = NYBLOG_BLOCK_END;
+	else if (strncmp(tok, "WARNING", 128 * sizeof(char)) == 0) *type = NYBLOG_WARNING;
+	else if (strncmp(tok, "ERROR", 128 * sizeof(char)) == 0) *type = NYBLOG_ERROR;
 
 	tok = strtok(NULL, "=;");
 	while (tok != NULL) {
@@ -39,6 +41,7 @@ int NYB_ParseLogLine(char *line, NYB_LogLineType *type, char data[26][32]) {
 		if (key < 'A' || key > 'Z') continue;
 
 		tok = strtok(NULL, "=;");
+		if (tok == NULL) continue;
 		while(isspace(tok[0])) tok++;
 		int len = strlen(tok);
 		strncpy(data[key - 'A'], tok, 32 * sizeof(char));
@@ -76,6 +79,7 @@ int NYB_ParseDataLine(char *line, uint8_t *offset, uint8_t data[16]) {
 
 int NYB_ParseLogBlock(FILE *f_log, NYB_DataBlock *block) {
 	if (f_log == NULL || block == NULL) return 1;
+	block->parse_error = 0x00;
 
 	char line[128];
 	bool in_block = false;
@@ -84,6 +88,7 @@ int NYB_ParseLogBlock(FILE *f_log, NYB_DataBlock *block) {
 
 		// Try parsing as log-line
 		NYB_LogLineType type;
+
 		char data[26][32];
 		int err = NYB_ParseLogLine(line, &type, data);
 		if (err == 0 && type != NYBLOG_INVALID) {
@@ -101,6 +106,16 @@ int NYB_ParseLogBlock(FILE *f_log, NYB_DataBlock *block) {
 				case NYBLOG_BLOCK_END: {
 					block->err_code = strtol(data['E' - 'A'], NULL, 10);
 					block->checksum = strtol(data['C' - 'A'], NULL, 16);
+					return 0;
+				}; break;
+
+				case NYBLOG_WARNING: {
+					block->parse_error = strtol(data['E' - 'A'], NULL, 10);
+					return 0;
+				}; break;
+
+				case NYBLOG_ERROR: {
+					block->parse_error = strtol(data['E' - 'A'], NULL, 10);
 					return 0;
 				}; break;
 
