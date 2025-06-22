@@ -2,6 +2,8 @@
 #include <raylib.h>
 
 
+//	---- Sector Utilities
+
 uint16_t DSK_Checksum(void *ptr) {
 	uint8_t lo = 0x00;
 	uint8_t hi = 0x00;
@@ -14,7 +16,6 @@ uint16_t DSK_Checksum(void *ptr) {
 
 	return (uint16_t)(hi) << 8 | (uint16_t)(lo);
 }
-
 
 int DSK_Track_GetSectorCount(int track_num) {
 	if (track_num < MIN_TRACKS || track_num > MAX_TRACKS) return 0;
@@ -91,6 +92,9 @@ DSK_Position DSK_GetHoveredSector() {
 		.sector = sec,
 	};
 }
+
+
+//	---- Retrieving Data
 
 int DSK_File_GetData(FILE *f_disk, DSK_Position pos, void *buf, size_t bufsz) {
 	int err = DSK_File_SeekPosition(f_disk, pos);
@@ -183,6 +187,26 @@ int DSK_File_ParseDirectory(FILE *f_disk, DSK_Directory *dir) {
 	return 0;
 }
 
+
+//	---- Debug Printing
+
+void DSK_PrintBAM(DSK_BAM bam) {
+	printf("\n BAM Contents:\n");
+	printf("---------------------------------\n");
+	for (int i=0; i<MAX_TRACKS; i++) {
+		uint8_t sec_free = bam.entries[i] & 0xFF;
+		int sec_total = DSK_Track_GetSectorCount(i+1);
+		printf(" Track % 3i: (% 3i/% 3i free) - ", i+1, sec_free, sec_total);
+
+		for (int s=0; s<sec_total; s++) {
+			int is_free = (bam.entries[i] >> (8 + s)) & 1;
+			printf("%c", is_free ? '_' : '#');
+		}
+
+		putchar('\n');
+	}
+}
+
 void DSK_PrintDirectory(DSK_Directory dir) {
 	printf("\n Disk directory contents:\n--------------------------\n");
 	for (int i=0; i<dir.num_entries; i++) {
@@ -194,6 +218,9 @@ void DSK_PrintDirectory(DSK_Directory dir) {
 		);
 	}
 }
+
+
+//	---- Getting Strings & Colours
 
 char *DSK_GetDescription(DSK_Directory dir) {
 	static char buffer[128];
@@ -233,22 +260,48 @@ char *DSK_GetName(DSK_Directory dir) {
 	return buffer;
 }
 
-void DSK_PrintBAM(DSK_BAM bam) {
-	printf("\n BAM Contents:\n");
-	printf("---------------------------------\n");
-	for (int i=0; i<MAX_TRACKS; i++) {
-		uint8_t sec_free = bam.entries[i] & 0xFF;
-		int sec_total = DSK_Track_GetSectorCount(i+1);
-		printf(" Track % 3i: (% 3i/% 3i free) - ", i+1, sec_free, sec_total);
-
-		for (int s=0; s<sec_total; s++) {
-			int is_free = (bam.entries[i] >> (8 + s)) & 1;
-			printf("%c", is_free ? '_' : '#');
-		}
-
-		putchar('\n');
+const char *DSK_Sector_GetTypeName(DSK_SectorType type) {
+	switch(type) {
+		case SECTYPE_DEL_CORPSE: return "Deleted Block [CORPSE]";
+		case SECTYPE_SEQ_CORPSE: return "Sequential Data Block [CORPSE]";
+		case SECTYPE_PRG_CORPSE: return "Program Block [CORPSE]";
+		case SECTYPE_USR_CORPSE: return "User Data Block [CORPSE]";
+		case SECTYPE_REL_CORPSE: return "Relative Data Block [CORPSE]";
+		case SECTYPE_DEL: return "Deleted Block";
+		case SECTYPE_SEQ: return "Sequential Data Block";
+		case SECTYPE_PRG: return "Program Block";
+		case SECTYPE_USR: return "User Data Block";
+		case SECTYPE_REL: return "Relative Data Block";
+		case SECTYPE_NONE: return "-";
+		case SECTYPE_BAM: return "Block-Availability Map";
+		case SECTYPE_DIR: return "Directory Table";
+		case SECTYPE_INVALID: return "Invalid Sector Type";
 	}
+	return "";
 }
+
+Color DSK_Sector_GetTypeColour(DSK_SectorType type) {
+	switch(type) {
+		case SECTYPE_DEL_CORPSE: return BLACK;
+		case SECTYPE_SEQ_CORPSE: return DARKGREEN;
+		case SECTYPE_PRG_CORPSE: return DARKBLUE;
+		case SECTYPE_USR_CORPSE: return MAROON;
+		case SECTYPE_REL_CORPSE: return DARKPURPLE;
+		case SECTYPE_DEL: return BLACK;
+		case SECTYPE_SEQ: return GREEN;
+		case SECTYPE_PRG: return BLUE;
+		case SECTYPE_USR: return RED;
+		case SECTYPE_REL: return PURPLE;
+		case SECTYPE_NONE: return GRAY;
+		case SECTYPE_BAM: return GOLD;
+		case SECTYPE_DIR: return GOLD;
+		case SECTYPE_INVALID: return MAGENTA;
+	}
+	return GRAY;
+}
+
+
+//	---- Drawing Functions
 
 void DSK_Sector_Draw(DSK_Directory dir, DSK_Position pos, DSK_DrawMode mode, Color clr) {
 	if (!DSK_IsPositionValid(pos)) return;
@@ -294,42 +347,82 @@ void DSK_Sector_Draw(DSK_Directory dir, DSK_Position pos, DSK_DrawMode mode, Col
 	}
 }
 
-const char *DSK_Sector_GetTypeName(DSK_SectorType type) {
-	switch(type) {
-		case SECTYPE_DEL_CORPSE: return "Deleted Block [CORPSE]";
-		case SECTYPE_SEQ_CORPSE: return "Sequential Data Block [CORPSE]";
-		case SECTYPE_PRG_CORPSE: return "Program Block [CORPSE]";
-		case SECTYPE_USR_CORPSE: return "User Data Block [CORPSE]";
-		case SECTYPE_REL_CORPSE: return "Relative Data Block [CORPSE]";
-		case SECTYPE_DEL: return "Deleted Block";
-		case SECTYPE_SEQ: return "Sequential Data Block";
-		case SECTYPE_PRG: return "Program Block";
-		case SECTYPE_USR: return "User Data Block";
-		case SECTYPE_REL: return "Relative Data Block";
-		case SECTYPE_NONE: return "-";
-		case SECTYPE_BAM: return "Block-Availability Map";
-		case SECTYPE_DIR: return "Directory Table";
-		case SECTYPE_INVALID: return "Invalid Sector Type";
+void __drawhexbyte(Font font, int x, int y, uint8_t byte, Color clr) {
+	for (int i=0; i<2; i++) {
+		uint8_t n = byte & 0x0F;
+
+		int o = ((1 - i) * 14);
+		if (n == 1) o += 6;
+
+		char c = '0';
+		if (n > 9) { n -= 10; c = 'A'; }
+		c += n;
+
+		DrawTextCodepoint(font, c,
+			(Vector2){ x + o, y },
+			20, clr
+		);
+
+		byte >>= 4;
 	}
-	return "";
 }
 
-Color DSK_Sector_GetTypeColour(DSK_SectorType type) {
-	switch(type) {
-		case SECTYPE_DEL_CORPSE: return BLACK;
-		case SECTYPE_SEQ_CORPSE: return DARKGREEN;
-		case SECTYPE_PRG_CORPSE: return DARKBLUE;
-		case SECTYPE_USR_CORPSE: return MAROON;
-		case SECTYPE_REL_CORPSE: return DARKPURPLE;
-		case SECTYPE_DEL: return BLACK;
-		case SECTYPE_SEQ: return GREEN;
-		case SECTYPE_PRG: return BLUE;
-		case SECTYPE_USR: return RED;
-		case SECTYPE_REL: return PURPLE;
-		case SECTYPE_NONE: return GRAY;
-		case SECTYPE_BAM: return GOLD;
-		case SECTYPE_DIR: return GOLD;
-		case SECTYPE_INVALID: return MAGENTA;
+void DSK_DrawData(int x, int y, void *buf, size_t bufsz, bool hex_mode, bool show_offset) {
+	if (buf == NULL) return;
+
+	Font font = GetFontDefault();
+	int line_num = 0;
+
+	int nx = x;
+	if (show_offset) nx += 40;
+	int cw = 32;
+	if (hex_mode) cw = 32;
+
+	for (int i=0; i<bufsz; i++) {
+		int bi = i & 0b1111;
+
+		int c = ((uint8_t *) buf)[i];
+		Color clr = BLACK;
+
+		if (isspace(c) || !isprint(c)) {
+			clr = LIGHTGRAY;
+			if (!hex_mode && isspace(c)) c = '.';
+		}
+
+		if (bi == 0) {
+			if (show_offset) {
+				__drawhexbyte(font, x, y + (line_num * 20), i, GRAY);
+			}
+
+			DrawTextCodepoint(font, '|',
+				(Vector2){ nx, y + (line_num * 20) },
+				20, BLACK
+			);
+		}
+
+		if (hex_mode) {
+			__drawhexbyte(font, nx + 10 + (bi * cw), y + (line_num * 20), c, clr);
+		} else {
+			DrawTextCodepoint(font, c,
+				(Vector2){ nx + 10 + (bi * cw), y + (line_num * 20) },
+				20, clr
+			);
+		}
+
+		if (bi == 15) {
+			DrawTextCodepoint(font, '|',
+				(Vector2){ nx + 10 + (16 * cw), y + (line_num++ * 20) },
+				20, BLACK
+			);
+		}
 	}
-	return GRAY;
+
+	if ((bufsz & 0b111) != 0) {
+		DrawTextCodepoint(font, '|',
+			(Vector2){ nx + 10 + (16 * cw), y + (line_num++ * 20) },
+			20, BLACK
+		);
+	}
+
 }
+

@@ -77,13 +77,6 @@ typedef enum {
 	SECTYPE_INVALID = 0xFF,
 } DSK_SectorType;
 
-typedef struct {
-	DSK_SectorType type;
-	bool in_use;
-	uint16_t checksum_original;
-	uint16_t checksum_calculated;
-} DSK_SectorInfo;
-
 #define DSK_POSITION_BAM (DSK_Position){ 0x12, 0x00 }
 
 
@@ -147,7 +140,7 @@ void DSK_PrintBAM(DSK_BAM bam);
 //
 void DSK_PrintDirectory(DSK_Directory dir);
 
-//	---- Getting Strings
+//	---- Getting Strings & Colours
 
 //	Gets the full directory header text
 //
@@ -160,10 +153,6 @@ char *DSK_GetDescription(DSK_Directory dir);
 // Internal buffer; do not `free` !
 // Limits the name to 17 chars trims and replaces shifted spaces
 char *DSK_GetName(DSK_Directory dir);
-
-//	Gets all information for a certain sector
-//
-DSK_SectorInfo DSK_Sector_GetFullInfo(DSK_Directory dir, FILE *f_disk, DSK_Position pos);
 
 //	Get a constant string for the name of a sector-type
 //
@@ -178,6 +167,19 @@ Color DSK_Sector_GetTypeColour(DSK_SectorType type);
 //	Draws a sector to the screen
 //
 void DSK_Sector_Draw(DSK_Directory dir, DSK_Position pos, DSK_DrawMode mode, Color clr);
+
+//	Draw a block of sector-data to the screen in fixed-width ASCII columns
+//
+//	The argument `hex_mode` determines whether to print the hexadecimal values or their ASCII characters
+//	The last argument `show_offset` determines whether to include the byte count
+//	before each row:
+//
+//		Off:				On:
+//		| A B C D |			0x00 | A B C D |	
+//		| E F G H |			0x04 | E F G H |	
+//		| I J K L |			0x08 | I J K L |	
+//
+void DSK_DrawData(int x, int y, void *buf, size_t bufsz, bool hex_mode, bool show_offset);
 
 
 #endif

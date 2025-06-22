@@ -9,6 +9,7 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <raylib.h>
+#include <sys/types.h>
 #include "../include/debug.h"
 #include "../include/arc.h"
 #include "../include/disk.h"
@@ -33,6 +34,19 @@ typedef enum {
 	SECSTAT_UNKNOWN = 0xFF,
 } REC_Status;
 
+typedef enum {
+	TEST_INVALID = 0x00,
+	TEST_SKIPPED = 0x01,
+	TEST_PASSED = 0x02,
+	TEST_FAILED = 0x03,
+} REC_TestResult;
+
+//	An abstracted analysis check; contains a function that performs a single check
+typedef struct {
+	const char *name;
+	REC_TestResult (*test_func)(NYB_DataBlock);
+} REC_Test;
+
 //	A single reconciliation entry in a disk-recon file
 typedef struct {
 	int file_index;			// Which sector of the file this one is
@@ -50,6 +64,10 @@ typedef struct {
 	REC_Entry entries[MAX_ANALYSIS_ENTRIES];
 } REC_Analysis;
 
+
+extern REC_Test REC_TEST_LIST[];
+
+
 //
 //	
 //	Function Declarations
@@ -62,6 +80,7 @@ bool REC_Sector_HasData(FILE *f_disk, DSK_Position pos);
 
 //	Analyses a disk and stores the results in a REC_Analysis struct
 //
+//	Tries to find as much information about every sector as it can
 int REC_AnalyseDisk(FILE *f_disk, FILE *f_meta, DSK_Directory dir, REC_Analysis *analysis);
 
 //	Get the full recon analysis entry for a given sector
@@ -81,18 +100,13 @@ Color REC_GetStatusColour(REC_Status status);
 //
 Color REC_GetFileColour(DSK_Directory dir, REC_Entry entry, bool is_hovered, bool is_selected);
 
-//	Draw a block of sector-data to the screen in fixed-width ASCII columns
-//
-//	The argument `hex_mode` determines whether to print the hexadecimal values or their ASCII characters
-//	The last argument `show_offset` determines whether to include the byte count
-//	before each row:
-//
-//		Off:				On:
-//		| A B C D |			0x00 | A B C D |	
-//		| E F G H |			0x04 | E F G H |	
-//		| I J K L |			0x08 | I J K L |	
-//
-void REC_DrawData(int x, int y, void *buf, size_t bufsz, bool hex_mode, bool show_offset);
+//	Gets a constant string for the name of a test result
+//	
+const char *REC_GetTestResultName(REC_TestResult result);
+
+//	Gets a colour for the name of a test result
+//	
+Color REC_GetTestResultColour(REC_TestResult result);
 
 
 #endif

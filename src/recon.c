@@ -1,5 +1,4 @@
 #include "../include/recon.h"
-#include <math.h>
 
 
 bool REC_Sector_HasData(FILE *f_disk, DSK_Position pos) {
@@ -16,85 +15,6 @@ bool REC_Sector_HasData(FILE *f_disk, DSK_Position pos) {
 	}
 
 	return false;
-}
-
-void __drawhexbyte(Font font, int x, int y, uint8_t byte, Color clr) {
-	for (int i=0; i<2; i++) {
-		uint8_t n = byte & 0x0F;
-
-		int o = ((1 - i) * 14);
-		if (n == 1) o += 6;
-
-		char c = '0';
-		if (n > 9) { n -= 10; c = 'A'; }
-		c += n;
-
-		DrawTextCodepoint(font, c,
-			(Vector2){ x + o, y },
-			20, clr
-		);
-
-		byte >>= 4;
-	}
-}
-
-void REC_DrawData(int x, int y, void *buf, size_t bufsz, bool hex_mode, bool show_offset) {
-	if (buf == NULL) return;
-
-	Font font = GetFontDefault();
-	int line_num = 0;
-
-	int nx = x;
-	if (show_offset) nx += 40;
-	int cw = 32;
-	if (hex_mode) cw = 32;
-
-	for (int i=0; i<bufsz; i++) {
-		int bi = i & 0b1111;
-
-		int c = ((uint8_t *) buf)[i];
-		Color clr = BLACK;
-
-		if (isspace(c) || !isprint(c)) {
-			clr = LIGHTGRAY;
-			if (!hex_mode && isspace(c)) c = '.';
-		}
-
-		if (bi == 0) {
-			if (show_offset) {
-				__drawhexbyte(font, x, y + (line_num * 20), i, GRAY);
-			}
-
-			DrawTextCodepoint(font, '|',
-				(Vector2){ nx, y + (line_num * 20) },
-				20, BLACK
-			);
-		}
-
-		if (hex_mode) {
-			__drawhexbyte(font, nx + 10 + (bi * cw), y + (line_num * 20), c, clr);
-		} else {
-			DrawTextCodepoint(font, c,
-				(Vector2){ nx + 10 + (bi * cw), y + (line_num * 20) },
-				20, clr
-			);
-		}
-
-		if (bi == 15) {
-			DrawTextCodepoint(font, '|',
-				(Vector2){ nx + 10 + (16 * cw), y + (line_num++ * 20) },
-				20, BLACK
-			);
-		}
-	}
-
-	if ((bufsz & 0b111) != 0) {
-		DrawTextCodepoint(font, '|',
-			(Vector2){ nx + 10 + (16 * cw), y + (line_num++ * 20) },
-			20, BLACK
-		);
-	}
-
 }
 
 int REC_AnalyseDisk(FILE *f_disk, FILE *f_meta, DSK_Directory dir, REC_Analysis *analysis) {
@@ -340,6 +260,23 @@ Color REC_GetFileColour(DSK_Directory dir, REC_Entry entry, bool is_hovered, boo
 	return clr;
 }
 
+const char *REC_GetTestResultName(REC_TestResult result) {
+	switch (result) {
+		case TEST_SKIPPED: return "SKIPPED";
+		case TEST_FAILED: return "FAILED";
+		case TEST_PASSED: return "PASSED";
+		default: return "INVALID";
+	}
+}
+
+Color REC_GetTestResultColour(REC_TestResult result) {
+	switch (result) {
+		case TEST_SKIPPED: return GRAY;
+		case TEST_FAILED: return RED;
+		case TEST_PASSED: return GREEN;
+		default: return MAGENTA;
+	}
+}
 
 
 

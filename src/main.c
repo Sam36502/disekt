@@ -5,19 +5,22 @@
 #include <stdlib.h>
 #include <raylib.h>
 
-Color __hsv_to_rgb(double, double, double);
-
 #include "../include/debug.h"
 #include "../include/disk.h"
 #include "../include/recon.h"
 #include "../include/nyblog.h"
 
-#define VERSION "0.3.0"
+
+#define VERSION "0.3.1"
 #define FRAMERATE 60		// FPS
 #define SCREEN_WIDTH 1600
 #define SCREEN_HEIGHT 1000
 #define KEY_TOGGLE_HEX_MODE 290
 #define KEY_TOGGLE_VIEW_MODE 291
+#define KEY_ARROW_RIGHT 262
+#define KEY_ARROW_LEFT 263
+#define KEY_ARROW_DOWN 264
+#define KEY_ARROW_UP 265
 
 
 // Function Declarations
@@ -171,8 +174,18 @@ int main(int argc, char *argv[]) {
 
 		int key = GetKeyPressed();
 		if (true || key != 0) {
-			if (key == KEY_TOGGLE_HEX_MODE) { hex_mode = !hex_mode; }
-			if (key == KEY_TOGGLE_VIEW_MODE) { view_mode++; view_mode %= 3; }
+			switch (key) {
+				case KEY_TOGGLE_HEX_MODE: { hex_mode = !hex_mode; } break;
+				case KEY_TOGGLE_VIEW_MODE: { view_mode++; view_mode %= 3; } break;
+				case KEY_ARROW_UP: { if (curr_sector.track < 35) curr_sector.track++; } break;
+				case KEY_ARROW_DOWN: { if (curr_sector.track > 1) curr_sector.track--; } break;
+				case KEY_ARROW_LEFT: { curr_sector.sector--; } break;
+				case KEY_ARROW_RIGHT: { curr_sector.sector++; } break;
+			}
+			int secs = DSK_Track_GetSectorCount(curr_sector.track);
+			if (curr_sector.sector > 0x80) curr_sector.sector = secs - 1;
+			if (curr_sector.sector >= secs) curr_sector.sector = 0;
+
 			redraw = true;
 
 			redraw |= DEBUG_HandleEvents(key);
@@ -331,18 +344,6 @@ int main(int argc, char *argv[]) {
 					}
 				} break;
 
-				//case SECTYPE_DIR: {
-				//	snprintf(buf, 256, "Directory Table:");
-				//	DrawText(buf, info_x + 20, 10 + (line_num++ * 20), 20, ORANGE);
-				//	line_num++;
-
-				//	REC_DrawData(
-				//		info_x + 20, 10 + (line_num * 20),
-				//		dir.header, DIR_HEADER_SIZE,
-				//		hex_mode, false
-				//	);
-				//} break;
-
 				case SECTYPE_PRG:
 				case SECTYPE_REL:
 				case SECTYPE_SEQ:
@@ -359,7 +360,6 @@ int main(int argc, char *argv[]) {
 					DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, BLACK);
 				} break;
 
-
 				default: break;
 			}
 
@@ -371,7 +371,7 @@ int main(int argc, char *argv[]) {
 			DrawText(buf, SCREEN_WIDTH - 10 - (10 * 11), 10 + (line_num++ * 20), 20, BLUE);
 			line_num++;
 
-			REC_DrawData(
+			DSK_DrawData(
 				info_x + 20, 10 + (line_num * 20),
 				curr_data, BLOCK_SIZE,
 				hex_mode, true
