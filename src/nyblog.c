@@ -1,5 +1,4 @@
 #include "../include/nyblog.h"
-#include <raylib.h>
 
 int NYB_ParseLogLine(char *line, NYB_LogLineType *type, char data[26][32]) {
 	if (line == NULL) return 1;

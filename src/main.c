@@ -15,12 +15,14 @@
 #define FRAMERATE 60		// FPS
 #define SCREEN_WIDTH 1600
 #define SCREEN_HEIGHT 1000
+
 #define KEY_TOGGLE_HEX_MODE 290
 #define KEY_TOGGLE_VIEW_MODE 291
 #define KEY_ARROW_RIGHT 262
 #define KEY_ARROW_LEFT 263
 #define KEY_ARROW_DOWN 264
 #define KEY_ARROW_UP 265
+
 #define CLR_ACCENT BLUE
 
 
@@ -163,6 +165,9 @@ int main(int argc, char *argv[]) {
 	}
 	char *name = DSK_GetName(dir);
 
+	const int info_x = DISK_CENTRE_X * 2;
+	const int info_tab_x = info_x + (16 * 12);
+
 	enum {
 		VIEW_SECSTAT, 
 		VIEW_BAM, 
@@ -178,10 +183,61 @@ int main(int argc, char *argv[]) {
 		// Handle inputs
 		DSK_Position hov = DSK_GetHoveredSector();
 		bool sector_changed = false;
-		if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && DSK_IsPositionValid(hov)) {
-			curr_pos = hov;
-			sector_changed = true;
+
+		if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+			if (DSK_IsPositionValid(hov)) {
+				curr_pos = hov;
+				sector_changed = true;
+			}
+
+			switch (curr_sector.type) {
+				case SECTYPE_DIR: {
+					for (int i=0; i<dir.num_entries; i++) {
+						Rectangle rect = {
+							info_x + 30, 10 + ((15+i) * 20),
+							50 + MeasureText(dir.entries[i].filename, 20), 20,
+						};
+						//DrawRectangleRec(rect, (Color){ 0xFF, 0x80, 0x40, 0x80 });
+						if (CheckCollisionPointRec(GetMousePosition(), rect)) {
+							curr_pos = dir.entries[i].head_pos;
+							sector_changed = true;
+						}
+					}
+				} break;
+
+				case SECTYPE_PRG:
+				case SECTYPE_SEQ:
+				case SECTYPE_REL:
+				case SECTYPE_DEL:
+				case SECTYPE_USR: {
+
+					// Next Button
+					if (curr_sector.file_index < curr_sector.dir_entry.block_count - 1) {
+						Rectangle rect = {
+							info_x + 10, 10 + (20 * 20),
+							40 + MeasureText("Next Block", 20), 40,
+						};
+						if (CheckCollisionPointRec(GetMousePosition(), rect)) {
+							// TODO: Map file blocks previous/next positions
+							for (int i=0; i<MAX_ANALYSIS_ENTRIES; i++) {
+								if (analysis.sectors[i].dir_index != curr_sector.dir_index) continue;
+								if (analysis.sectors[i].file_index != curr_sector.file_index+1) continue;
+
+								curr_pos = analysis.sectors[i].pos;
+								sector_changed = true;
+								break;
+							}
+						}
+
+					}
+
+				} break;
+
+				default: break;
+			}
+
 		}
+
 
 		int key = GetKeyPressed();
 		if (true || key != 0) {
@@ -283,9 +339,6 @@ int main(int argc, char *argv[]) {
 				}
 			}
 
-			const int info_x = DISK_CENTRE_X * 2;
-			const int info_tab_x = info_x + (16 * 12);
-
 			// Draw Title
 			draw_text(name, 10, 10, -1, CLR_ACCENT);
 			draw_text(TextFormat("\"%s\"", disk_filename),
@@ -333,17 +386,17 @@ int main(int argc, char *argv[]) {
 				(Vector2){ info_x, SCREEN_HEIGHT - 10 },
 				2.0f, BLACK
 			);
-			DrawLineEx(
-				(Vector2){ info_x + 10, 10 + 26 },
-				(Vector2){ SCREEN_WIDTH - 10, 10 + 26 },
-				2.0f, BLACK
-			);
 
 			int line_num = 0;
 			draw_text("Current Sector Info:",
 					info_x + 10, 10 + (line_num++ * 20), -1, BLACK
 			);
-			line_num++;
+
+			DrawLineEx(
+				(Vector2){ info_x + 10, 18 + (line_num * 20) },
+				(Vector2){ SCREEN_WIDTH - 10, 18 + (line_num * 20) },
+				2.0f, BLACK
+			); line_num++;
 
 			draw_text("Sector Type:",
 					info_tab_x - 5, 10 + (line_num * 20), 1, BLACK
@@ -415,7 +468,12 @@ int main(int argc, char *argv[]) {
 			);
 
 			// Draw specific sector info
-			line_num += 2;
+			line_num = 12;
+			DrawLineEx(
+				(Vector2){ info_x + 10, 19 + (line_num * 20) },
+				(Vector2){ SCREEN_WIDTH - 10, 19 + (line_num * 20) },
+				2.0f, BLACK
+			); line_num++;
 			switch (curr_sector.type) {
 
 				case SECTYPE_BAM: {
@@ -444,28 +502,78 @@ int main(int argc, char *argv[]) {
 					}
 				} break;
 
-				case SECTYPE_PRG:
-				case SECTYPE_REL:
-				case SECTYPE_SEQ: {
-					draw_text("File:",
-						info_tab_x - 5, 10 + (line_num * 20), 1,
+				case SECTYPE_DIR: {
+					draw_text("Directory Files:",
+						info_x + 10, 10 + (line_num++ * 20), -1,
 						BLACK
 					);
+					line_num++;
+
+					for (int i=0; i<dir.num_entries; i++) {
+						Color clr = GRAY;
+						Rectangle rect = {
+							info_x + 30, 10 + (line_num * 20),
+							50 + MeasureText(dir.entries[i].filename, 20), 20,
+						};
+
+						if (CheckCollisionPointRec(GetMousePosition(), rect)) clr = CLR_ACCENT;
+
+						DrawPoly((Vector2){ info_x + 40, 19 + (line_num * 20) },
+							4, 5, 0, clr
+						);
+						draw_text(dir.entries[i].filename,
+							info_x + 60, 10 + (line_num++ * 20), -1,
+							clr
+						);
+					}
+				} break;
+
+				case SECTYPE_PRG:
+				case SECTYPE_REL:
+				case SECTYPE_USR:
+				case SECTYPE_SEQ: {
+					draw_text("File Information:",
+						info_x + 10, 10 + (line_num++ * 20), -1,
+						BLACK
+					);
+					line_num++;
+
 					draw_text(curr_sector.dir_entry.filename,
-						info_tab_x + 5, 10 + (line_num++ * 20), -1,
+						info_x + 20, 10 + (line_num++ * 20), -1,
 						DSK_Sector_GetTypeColour(curr_sector.dir_entry.type)
 					);
 					draw_text(TextFormat("Block %i / %i", curr_sector.file_index+1, curr_sector.dir_entry.block_count),
-						info_tab_x + 0, 10 + (line_num++ * 20), 0,
+						info_x + 20, 10 + (line_num++ * 20), -1,
 						BLACK
 					);
+
+					line_num = 20;
+					if (curr_sector.file_index < curr_sector.dir_entry.block_count - 1) {
+						Rectangle rect = {
+							info_x + 10, 10 + (20 * 20),
+							40 + MeasureText("Next Block", 20), 40,
+						};
+						Color clr = GRAY;
+						if (CheckCollisionPointRec(GetMousePosition(), rect)) clr = CLR_ACCENT;
+						draw_text(TextFormat("Next Block"),
+							info_x + 30, 20 + (line_num++ * 20), -1, clr
+						);
+						DrawRectangleLinesEx(rect, 2, clr);
+					}
+
 				} break;
 
 				default: break;
 			}
 
 			// Display Sector contents
-			line_num = 31;
+			line_num = 30;
+			DrawLineEx(
+				(Vector2){ info_x + 10, 20 + (line_num * 20) },
+				(Vector2){ SCREEN_WIDTH - 10, 20 + (line_num * 20) },
+				2.0f, BLACK
+			); line_num++;
+
 			draw_text("Sector Contents:",
 				info_x + 10, 10 + (line_num * 20), -1,
 				BLACK
@@ -474,7 +582,12 @@ int main(int argc, char *argv[]) {
 				SCREEN_WIDTH - 10, 10 + (line_num++ * 20), 1,
 				CLR_ACCENT
 			);
-			line_num++;
+
+			DrawLineEx(
+				(Vector2){ info_x + 10, 18 + (line_num * 20) },
+				(Vector2){ SCREEN_WIDTH - 10, 18 + (line_num * 20) },
+				2.0f, BLACK
+			); line_num++;
 
 			DSK_DrawData(
 				info_x + 20, 10 + (line_num * 20),
@@ -594,7 +707,7 @@ void usage() {
 	printf("Usage: disekt [OPTIONS] <disk path>\n");
 	printf("\n");
 	printf("Args:\n");
-	printf("  disk path			The path to a C64 disk file to read the BAM of\n");
+	printf("  disk path			The path to a Commodore 64 disk file to read\n");
 	printf("\n");
 	printf("Options:\n");
 	printf("  -h, --help		Print this usage text and exit\n");
@@ -602,7 +715,7 @@ void usage() {
 	printf("  -d, --debug		Enable more verbose logging for debugging\n");
 	printf("  -l <filename>		Parse the text log file provided and write its\n");
 	printf("					contents to the given disk file\n");
-	printf("  -r <filename>		Include information from an external reconciliation\n");
+	printf("  -e <filename>		Include information from an external reconciliation\n");
 	printf("					file. If provided with -l, the log writes the recon\n");
 	printf("					data to this file before loading\n");
 	printf("\n");
