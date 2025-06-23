@@ -43,6 +43,7 @@ typedef struct {
 	
 	// General info flags
 	uint8_t is_free : 1;			// Is this block marked as free in the BAM
+	uint8_t has_data : 1;			// Does the data for this block contain useful, non-zero bytes?
 	uint8_t has_transfer_info : 1;	// Do we have valid transfer info for this sector
 	uint8_t has_directory_info : 1;	// Do we have valid directory info for this sector
 

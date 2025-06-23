@@ -25,22 +25,20 @@ int ANA_AnalyseDisk(FILE *f_disk, FILE *f_meta, DSK_Directory dir, ANA_DiskInfo 
 	// TODO: More initial checks (can we find the BAM? Is it valid? Is the header/directory valid? etc.)
 	// For now we're just assuming that the provided parsed BAM and directories are healthy
 
-	// Initialise analysis struct with basic information
+	// Initialise analysis struct with basic information for each sector
 	for (int t=MIN_TRACKS; t<=MAX_TRACKS; t++) {
 		for (int s=0; s<21; s++) {
 			DSK_Position pos = { t, s };
 			int index = DSK_PositionToIndex(pos);
 			if (index < 0) continue;
 
-			DSK_SectorType type = SECTYPE_INVALID;
-			if (t == 18 && s == 0) type = SECTYPE_BAM;
-
 			analysis->sectors[index] = (ANA_SectorInfo){
 				.pos = pos,
-				.type = type,
+				.type = SECTYPE_UNKNOWN,
 				.status = SECSTAT_UNKNOWN,
 			
 				.is_free = (dir.bam.entries[pos.track - 1] >> (8 + pos.sector)) & 0b1,
+				.has_data = false,
 				.has_transfer_info = false,
 				.has_directory_info = false,
 
@@ -52,13 +50,22 @@ int ANA_AnalyseDisk(FILE *f_disk, FILE *f_meta, DSK_Directory dir, ANA_DiskInfo 
 				.parse_err = 0xFF,
 			};
 
+			// Do basic type checks
+			if (analysis->sectors[index].is_free) {
+				analysis->sectors[index].type = SECTYPE_EMPTY;
+			} else {
+				if (t == 18) {
+					if (s == 0) analysis->sectors[index].type = SECTYPE_BAM;
+					else analysis->sectors[index].type = SECTYPE_DIR;
+				}
+			}
+
 			// Get the metadata entry if available
 			if (f_meta != NULL) {
 				NYB_DataBlock block;
 				block.track_num = t;
 				block.sector_index = s;
 				int err = NYB_Meta_ReadBlock(f_meta, &block);
-
 				if (err == 0 && block.block_status != 0x00) {
 					analysis->sectors[index].has_transfer_info = true;
 					analysis->sectors[index].checksum = block.checksum;
@@ -69,10 +76,31 @@ int ANA_AnalyseDisk(FILE *f_disk, FILE *f_meta, DSK_Directory dir, ANA_DiskInfo 
 					if (block.checksum != DSK_Checksum(block.data)) analysis->sectors[index].status = SECSTAT_CORRUPTED;
 					else analysis->sectors[index].status = SECSTAT_CONFIRMED;
 					if (block.parse_error != 0x00) analysis->sectors[index].status = SECSTAT_CORRUPTED;
+
+					memcpy(analysis->sectors[index].data, block.data, BLOCK_SIZE);
 				}
-				memcpy(analysis->sectors[index].data, block.data, BLOCK_SIZE);
 			} else {
-				DSK_File_GetData(f_disk, pos, analysis->sectors[index].data, BLOCK_SIZE);
+				int err = DSK_File_GetData(f_disk, pos, analysis->sectors[index].data, BLOCK_SIZE);
+				if (err != 0) {
+					for (int i=0; i<BLOCK_SIZE; i++) analysis->sectors[index].data[i] = 0x00;
+				}
+			}
+
+			// Do basic status checks
+			// TODO: Replace with proper tests
+
+			// TODO: Replace with more permissive test (include known "empty" block patterns)
+			uint8_t *d = analysis->sectors[index].data;
+			for (int i=0; i<BLOCK_SIZE; i++) {
+				if (d[i] != 0x00) { analysis->sectors[index].has_data = true; break; }
+			}
+
+			if (analysis->sectors[index].is_free) {
+				if (analysis->sectors[index].has_data) analysis->sectors[index].status = SECSTAT_UNEXPECTED;
+				else analysis->sectors[index].status = SECSTAT_EMPTY;
+			} else {
+				if (analysis->sectors[index].has_data) analysis->sectors[index].status = SECSTAT_PRESENT;
+				else analysis->sectors[index].status = SECSTAT_MISSING;
 			}
 
 		}
@@ -168,10 +196,10 @@ const char *REC_GetStatusName(REC_Status status) {
 
 Color REC_GetStatusColour(REC_Status status) {
 	switch (status) {
-		case SECSTAT_EMPTY: return GRAY;
+		case SECSTAT_EMPTY: return LIGHTGRAY;
 		case SECSTAT_UNEXPECTED: return PURPLE;
 		case SECSTAT_MISSING: return ORANGE;
-		case SECSTAT_PRESENT: return GOLD;
+		case SECSTAT_PRESENT: return YELLOW;
 		case SECSTAT_BAD: return RED;
 		case SECSTAT_GOOD: return GREEN;
 		case SECSTAT_CORRUPTED: return MAROON;
@@ -262,60 +290,4 @@ Color ANA_GetTestResultColour(ANA_TestResult result) {
 		default: return MAGENTA;
 	}
 }
-
-
-
-//REC_File *REC_ReadFile(char *filename) {
-//	if (filename == NULL) return NULL;
-//
-//	REC_File *rec = malloc(sizeof(REC_File));
-//	rec->path = NULL;
-//	rec->disk_path = NULL;
-//
-//	// Open the file
-//	size_t fnlen = strlen(filename);
-//	rec->path = malloc(fnlen + 1);
-//	strlcpy(rec->path, filename, fnlen);
-//	FILE *f = fopen(filename, "rb");
-//
-//	// Check for the 4 magic bytes of the rec file header
-//	uint8_t magic[4];
-//	fread(magic, sizeof(uint8_t), 4, f);
-//	for (int i=0; i<4; i++) {
-//		if (magic[i] != REC_MAGIC_BYTES[i]) {
-//			fclose(f);
-//			REC_CloseFile(rec);
-//			return NULL;
-//		}
-//	}
-//
-//	// Read region offsets
-//	fread(&rec->offs_entries, sizeof(uint32_t), 1, f);
-//	fread(&rec->offs_data, sizeof(uint32_t), 1, f);
-//	fread(&rec->offs_strings, sizeof(uint32_t), 1, f);
-//
-//	// Try to read the disk file path
-//	
-//
-//	return 0;
-//}
-//
-//void REC_CloseFile(REC_File *rec) {
-//	if (rec == NULL) return;
-//
-//	//if (rec->disk_path
-//	
-//}
-//
-//int REC_WriteFile(REC_File *rec) {
-//	if (rec == NULL) return 1;
-//
-//	return 0;
-//}
-//
-//ANA_SectorInfo REC_FindEntry(REC_File *rec, REC_RecordType type, int index) {
-//	if (rec == NULL) return (ANA_SectorInfo){};
-//
-//	return (ANA_SectorInfo){};
-//}
 

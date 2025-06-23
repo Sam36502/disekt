@@ -163,10 +163,12 @@ int main(int argc, char *argv[]) {
 	char *name = DSK_GetName(dir);
 
 	enum {
-		VIEW_SECTYPE = 0, 
-		VIEW_SECSTAT = 1, 
-		VIEW_FILES = 2, 
-	} view_mode = VIEW_SECTYPE;
+		VIEW_SECSTAT, 
+		VIEW_BAM, 
+		VIEW_SECTYPE, 
+		VIEW_FILES, 
+		VIEW_INVALID,
+	} view_mode = VIEW_SECSTAT;
 	bool redraw = true;
 	bool hex_mode = false;
 	while (!WindowShouldClose()) {
@@ -174,7 +176,7 @@ int main(int argc, char *argv[]) {
 		// Handle inputs
 		DSK_Position hov = DSK_GetHoveredSector();
 		bool sector_changed = false;
-		if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+		if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && DSK_IsPositionValid(hov)) {
 			curr_pos = hov;
 			sector_changed = true;
 		}
@@ -183,7 +185,7 @@ int main(int argc, char *argv[]) {
 		if (true || key != 0) {
 			switch (key) {
 				case KEY_TOGGLE_HEX_MODE: { hex_mode = !hex_mode; } break;
-				case KEY_TOGGLE_VIEW_MODE: { view_mode++; view_mode %= 3; } break;
+				case KEY_TOGGLE_VIEW_MODE: { view_mode++; if (view_mode >= VIEW_INVALID) view_mode = 0; } break;
 				case KEY_ARROW_UP: { if (curr_pos.track < 35) curr_pos.track++; sector_changed = true; } break;
 				case KEY_ARROW_DOWN: { if (curr_pos.track > 1) curr_pos.track--; sector_changed = true; } break;
 				case KEY_ARROW_LEFT: { curr_pos.sector--; sector_changed = true; } break;
@@ -207,7 +209,7 @@ int main(int argc, char *argv[]) {
 				curr_checksum = DSK_Checksum(curr_sector.data);
 			}
 		}
-		
+
 		if (redraw) {
 			BeginDrawing();
 
@@ -242,8 +244,23 @@ int main(int argc, char *argv[]) {
 
 					Color clr = GRAY;
 					switch (view_mode) {
-						case VIEW_SECTYPE: clr = DSK_Sector_GetTypeColour(info.type); break;
+						case VIEW_INVALID: view_mode = VIEW_SECSTAT; // Fall-through
 						case VIEW_SECSTAT: clr = REC_GetStatusColour(info.status); break;
+						case VIEW_BAM: {
+							if (!info.is_free) {
+								if (info.has_data) {
+									if (info.has_transfer_info) clr = GREEN;
+									else clr = LIME;
+								} else {
+									if (info.has_transfer_info) clr = ORANGE;
+									else clr = RED;
+								}
+							} else {
+								if (!info.has_data) clr = BLACK;
+								else clr = DARKGRAY;
+							}
+						} break;
+						case VIEW_SECTYPE: clr = DSK_Sector_GetTypeColour(info.type); break;
 						case VIEW_FILES: clr = ANA_GetFileColour(dir, info,
 							(hov_dir_index == info.dir_index),
 							(curr_sector.dir_index == info.dir_index)
@@ -282,10 +299,14 @@ int main(int argc, char *argv[]) {
 				info_x - 10, SCREEN_HEIGHT - 50, 1, BLACK
 			);
 			switch (view_mode) {
-				case VIEW_SECTYPE: draw_text("Sector Type",
+				case VIEW_INVALID: view_mode = VIEW_SECSTAT; // Fall-through
+				case VIEW_SECSTAT: draw_text("Sector Status",
 					info_x - 10, SCREEN_HEIGHT - 30, 1, BLACK
 				); break;
-				case VIEW_SECSTAT: draw_text("Sector Status",
+				case VIEW_BAM: draw_text("Content Check",
+					info_x - 10, SCREEN_HEIGHT - 30, 1, BLACK
+				); break;
+				case VIEW_SECTYPE: draw_text("Sector Type",
 					info_x - 10, SCREEN_HEIGHT - 30, 1, BLACK
 				); break;
 				case VIEW_FILES: draw_text("File Blocks",
@@ -327,7 +348,7 @@ int main(int argc, char *argv[]) {
 					info_tab_x - 5, 10 + (line_num * 20), 1, BLACK
 			);
 			draw_text(REC_GetStatusName(curr_sector.status),
-					info_tab_x + 5, 10 + (line_num++ * 20), -1, REC_GetStatusColour(curr_sector.status)
+					info_tab_x + 5, 10 + (line_num++ * 20), -1, GRAY
 			);
 
 			draw_text("Checksum:",
@@ -338,10 +359,15 @@ int main(int argc, char *argv[]) {
 						curr_checksum, curr_sector.checksum,
 						(curr_checksum == curr_sector.checksum) ? "MATCH":"BREAK"
 					), info_tab_x + 5, 10 + (line_num++ * 20), -1,
-					REC_GetStatusColour(curr_sector.status)
+					(curr_checksum == curr_sector.checksum) ? GREEN:RED
+				);
+			} else if (curr_sector.has_data) {
+				draw_text(TextFormat("0x%04X", curr_checksum),
+					info_tab_x + 5, 10 + (line_num++ * 20), -1,
+					GRAY
 				);
 			} else {
-				draw_text(TextFormat("0x%04X", curr_checksum),
+				draw_text("-",
 					info_tab_x + 5, 10 + (line_num++ * 20), -1,
 					GRAY
 				);

@@ -267,9 +267,10 @@ const char *DSK_Sector_GetTypeName(DSK_SectorType type) {
 		case SECTYPE_PRG: return "Program Block";
 		case SECTYPE_USR: return "User Data Block";
 		case SECTYPE_REL: return "Relative Data Block";
-		case SECTYPE_NONE: return "-";
+		case SECTYPE_EMPTY: return "-";
 		case SECTYPE_BAM: return "Block-Availability Map";
 		case SECTYPE_DIR: return "Directory Table";
+		case SECTYPE_UNKNOWN: return "???";
 		case SECTYPE_INVALID: return "Invalid Sector Type";
 	}
 	return "";
@@ -282,9 +283,10 @@ Color DSK_Sector_GetTypeColour(DSK_SectorType type) {
 		case SECTYPE_PRG: return BLUE;
 		case SECTYPE_USR: return RED;
 		case SECTYPE_REL: return PURPLE;
-		case SECTYPE_NONE: return GRAY;
+		case SECTYPE_EMPTY: return DARKGRAY;
 		case SECTYPE_BAM: return GOLD;
 		case SECTYPE_DIR: return GOLD;
+		case SECTYPE_UNKNOWN: return GRAY;
 		case SECTYPE_INVALID: return MAGENTA;
 	}
 	return GRAY;
