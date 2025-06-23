@@ -269,7 +269,8 @@ int NYB_WriteToDiskImage(char *filename, NYB_DataBlock *block_buf, int buf_len) 
 	fseek(f_disk, 256, SEEK_CUR);
 
 	uint8_t lastbyte;
-	fread(&lastbyte, sizeof(uint8_t), 1, f_disk);
+	int n = fread(&lastbyte, sizeof(uint8_t), 1, f_disk);
+	if (n != 1) lastbyte = 0x00;
 	fseek(f_disk, -1, SEEK_CUR);
 	fwrite(&lastbyte, sizeof(uint8_t), 1, f_disk);
 

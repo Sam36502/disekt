@@ -11,7 +11,7 @@
 #include "../include/nyblog.h"
 
 
-#define VERSION "0.3.1"
+#define VERSION "0.4.2"
 #define FRAMERATE 60		// FPS
 #define SCREEN_WIDTH 1600
 #define SCREEN_HEIGHT 1000
@@ -21,6 +21,7 @@
 #define KEY_ARROW_LEFT 263
 #define KEY_ARROW_DOWN 264
 #define KEY_ARROW_UP 265
+#define CLR_ACCENT BLUE
 
 
 // Function Declarations
@@ -165,6 +166,7 @@ int main(int argc, char *argv[]) {
 	enum {
 		VIEW_SECSTAT, 
 		VIEW_BAM, 
+		VIEW_TRANSFER, 
 		VIEW_SECTYPE, 
 		VIEW_FILES, 
 		VIEW_INVALID,
@@ -246,20 +248,30 @@ int main(int argc, char *argv[]) {
 					switch (view_mode) {
 						case VIEW_INVALID: view_mode = VIEW_SECSTAT; // Fall-through
 						case VIEW_SECSTAT: clr = REC_GetStatusColour(info.status); break;
+
 						case VIEW_BAM: {
 							if (!info.is_free) {
-								if (info.has_data) {
-									if (info.has_transfer_info) clr = GREEN;
-									else clr = LIME;
-								} else {
-									if (info.has_transfer_info) clr = ORANGE;
-									else clr = RED;
-								}
+								if (info.has_data && !info.is_blank) clr = GREEN;
+								else clr = RED;
 							} else {
-								if (!info.has_data) clr = BLACK;
-								else clr = DARKGRAY;
+								if (!info.has_data || info.is_blank) clr = LIGHTGRAY;
+								else clr = BLACK;
 							}
 						} break;
+
+						case VIEW_TRANSFER: {
+							if (info.has_transfer_info && info.has_data) {
+								if (info.parse_err == 0x00) {
+									if (info.disk_err == 0x80 && info.checksum_match) clr = GREEN;
+									else clr = RED;
+								} else {
+									clr = RED;
+								}
+							} else {
+								clr = LIGHTGRAY;
+							}
+						} break;
+
 						case VIEW_SECTYPE: clr = DSK_Sector_GetTypeColour(info.type); break;
 						case VIEW_FILES: clr = ANA_GetFileColour(dir, info,
 							(hov_dir_index == info.dir_index),
@@ -275,7 +287,7 @@ int main(int argc, char *argv[]) {
 			const int info_tab_x = info_x + (16 * 12);
 
 			// Draw Title
-			draw_text(name, 10, 10, -1, RED);
+			draw_text(name, 10, 10, -1, CLR_ACCENT);
 			draw_text(TextFormat("\"%s\"", disk_filename),
 				10, 30, -1, BLACK
 			);
@@ -283,36 +295,33 @@ int main(int argc, char *argv[]) {
 			// Draw Currently selected sector pos & hovered sector pos
 			if (DSK_IsPositionValid(hov)) {
 				draw_text(TextFormat("[% 3i/% 3i]", hov.track, hov.sector),
-					10, SCREEN_HEIGHT - 50, -1, GRAY
+					10, SCREEN_HEIGHT - 50, -1, BLACK
 				);
 			} else {
 				draw_text("[---/---]",
-					10, SCREEN_HEIGHT - 50, -1, GRAY
+					10, SCREEN_HEIGHT - 50, -1, LIGHTGRAY
 				);
 			}
 			draw_text(TextFormat("[% 3i/% 3i]", curr_pos.track, curr_pos.sector),
-				10, SCREEN_HEIGHT - 30, -1, BLACK
+				10, SCREEN_HEIGHT - 30, -1, CLR_ACCENT
 			);
 
 			// Draw current view mode name
 			draw_text("View Mode [F2]",
 				info_x - 10, SCREEN_HEIGHT - 50, 1, BLACK
 			);
+			char *mode_name = "";
 			switch (view_mode) {
 				case VIEW_INVALID: view_mode = VIEW_SECSTAT; // Fall-through
-				case VIEW_SECSTAT: draw_text("Sector Status",
-					info_x - 10, SCREEN_HEIGHT - 30, 1, BLACK
-				); break;
-				case VIEW_BAM: draw_text("Content Check",
-					info_x - 10, SCREEN_HEIGHT - 30, 1, BLACK
-				); break;
-				case VIEW_SECTYPE: draw_text("Sector Type",
-					info_x - 10, SCREEN_HEIGHT - 30, 1, BLACK
-				); break;
-				case VIEW_FILES: draw_text("File Blocks",
-					info_x - 10, SCREEN_HEIGHT - 30, 1, BLACK
-				); break;
+				case VIEW_SECSTAT: mode_name = "Sector Status"; break;
+				case VIEW_BAM: mode_name = "Missing Sectors"; break;
+				case VIEW_TRANSFER: mode_name = "Transfer Errors"; break;
+				case VIEW_SECTYPE: mode_name = "Sector Type"; break;
+				case VIEW_FILES: mode_name = "File Blocks"; break;
 			}
+			draw_text(mode_name,
+				info_x - 10, SCREEN_HEIGHT - 30, 1, CLR_ACCENT
+			);
 
 			// TODO: Draw full disk usage & analysis stats in top-right corner
 
@@ -343,14 +352,6 @@ int main(int argc, char *argv[]) {
 					info_tab_x + 5, 10 + (line_num++ * 20), -1, DSK_Sector_GetTypeColour(curr_sector.type)
 			);
 
-			// TODO: Replace with list of tests
-			draw_text("Sector Status:",
-					info_tab_x - 5, 10 + (line_num * 20), 1, BLACK
-			);
-			draw_text(REC_GetStatusName(curr_sector.status),
-					info_tab_x + 5, 10 + (line_num++ * 20), -1, GRAY
-			);
-
 			draw_text("Checksum:",
 					info_tab_x - 5, 10 + (line_num * 20), 1, BLACK
 			);
@@ -372,6 +373,7 @@ int main(int argc, char *argv[]) {
 					GRAY
 				);
 			}
+			line_num++;
 
 			if (curr_sector.has_transfer_info) {
 				draw_text("Disk Error:",
@@ -379,12 +381,38 @@ int main(int argc, char *argv[]) {
 				);
 
 				uint8_t e = curr_sector.disk_err & ~0x80;
-				// TODO: Replace with text from an error-code table
-				draw_text(TextFormat("%i [%s]", e, (e == 0x00) ? "OK":"ERR"),
+				draw_text(TextFormat("0x%02X (%i)", e, e),
 					info_tab_x + 5, 10 + (line_num++ * 20), -1,
-					(e == 0x00) ? GREEN : RED
+					ANA_GetDiskErrorColour(curr_sector.disk_err)
 				);
+				draw_text(ANA_GetDiskErrorName(curr_sector.disk_err),
+					info_tab_x + 5, 10 + (line_num++ * 20), -1,
+					ANA_GetDiskErrorColour(curr_sector.disk_err)
+				);
+				line_num++;
+
+				e = curr_sector.parse_err;
+				draw_text("Parse Error:",
+						info_tab_x - 5, 10 + (line_num * 20), 1, BLACK
+				);
+				draw_text(TextFormat("0x%02X (%i)", e, e),
+					info_tab_x + 5, 10 + (line_num++ * 20), -1,
+					ANA_GetParseErrorColour(e)
+				);
+				draw_text(ANA_GetParseErrorName(e),
+					info_tab_x + 5, 10 + (line_num++ * 20), -1,
+					ANA_GetParseErrorColour(e)
+				);
+				line_num++;
 			}
+
+			draw_text("Sector Status:",
+				info_tab_x - 5, 10 + (line_num * 20), 1, BLACK
+			);
+			draw_text(REC_GetStatusName(curr_sector.status),
+				info_tab_x + 5, 10 + (line_num++ * 20), -1,
+				REC_GetStatusColour(curr_sector.status)
+			);
 
 			// Draw specific sector info
 			line_num += 2;
@@ -444,7 +472,7 @@ int main(int argc, char *argv[]) {
 			);
 			draw_text(hex_mode ? "HEX [F1]":"ASCII [F1]",
 				SCREEN_WIDTH - 10, 10 + (line_num++ * 20), 1,
-				BLUE
+				CLR_ACCENT
 			);
 			line_num++;
 

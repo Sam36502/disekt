@@ -32,13 +32,13 @@ typedef enum {
 	SECSTAT_BAD = 0x40,
 	SECSTAT_GOOD = 0x41,
 	SECSTAT_UNKNOWN = 0xFF,
-} REC_Status;
+} ANA_Status;
 
 //	The full analysis of all collected information about a single disk sector
 typedef struct {
 	DSK_Position pos;
 	DSK_SectorType type;			// What type of sector this is (
-	REC_Status status;				// ! DEPRECATED !
+	ANA_Status status;				// ! DEPRECATED !
 	uint8_t data[BLOCK_SIZE];		// The full block data
 	
 	// General info flags
@@ -46,6 +46,8 @@ typedef struct {
 	uint8_t has_data : 1;			// Does the data for this block contain useful, non-zero bytes?
 	uint8_t has_transfer_info : 1;	// Do we have valid transfer info for this sector
 	uint8_t has_directory_info : 1;	// Do we have valid directory info for this sector
+	uint8_t checksum_match : 1;		// Does the provided checksum match the data?
+	uint8_t is_blank : 1;			// The block is non-zero, but matches a known "empty" format
 
 	// Directory Info
 	DSK_DirEntry dir_entry;			// Which directory file this sector belongs to
@@ -58,39 +60,16 @@ typedef struct {
 	uint8_t parse_err;				// Error code from the nybbler transfer
 } ANA_SectorInfo;
 
-typedef enum {
-	TEST_INVALID = 0x00,
-	TEST_SKIPPED = 0x01,
-	TEST_PASSED = 0x02,
-	TEST_FAILED = 0x03,
-} ANA_TestResult;
-
-//	An abstracted analysis check; contains a function that performs a single check
-typedef struct {
-	const char *name;
-	ANA_TestResult (*test_func)(ANA_SectorInfo);
-} ANA_Test;
-
 //	Contains the results of analysing the disk;
 typedef struct {
 	DSK_Directory dir;
 	ANA_SectorInfo sectors[MAX_ANALYSIS_ENTRIES];
-	// TODO: Test Pass/Fail ratio?
 } ANA_DiskInfo;
-
-
-extern ANA_Test ANA_TEST_LIST[];
-
 
 //
 //	
 //	Function Declarations
 //	
-
-//	Checks if a sector has data (non-zero bytes)
-//
-//	Returns false if `f_disk` is NULL
-bool REC_Sector_HasData(FILE *f_disk, DSK_Position pos);
 
 //	Analyses a disk and stores the results in the provided DiskInfo struct
 //
@@ -105,24 +84,32 @@ int ANA_GetInfo(ANA_DiskInfo analysis, DSK_Position pos, ANA_SectorInfo *entry);
 //	Gets a constant char pointer to the name of a sector status
 //	
 //	*Deprecated*
-const char *REC_GetStatusName(REC_Status status);
+const char *REC_GetStatusName(ANA_Status status);
 
 //	Get a colour for a sector based on its state
 //
 //	*Deprecated*
-Color REC_GetStatusColour(REC_Status status);
+Color REC_GetStatusColour(ANA_Status status);
 
 //	Get a colour for a sector based on which file it belongs to
 //
 Color ANA_GetFileColour(DSK_Directory dir, ANA_SectorInfo entry, bool is_hovered, bool is_selected);
 
-//	Gets a constant string for the name of a test result
-//	
-const char *ANA_GetTestResultName(ANA_TestResult result);
+//	Get a constant char pointer to the name of a nyb-log parse error
+//
+const char *ANA_GetParseErrorName(int err_code);
 
-//	Gets a colour for the name of a test result
-//	
-Color ANA_GetTestResultColour(ANA_TestResult result);
+//	Get a colour for a nyb-log parsing error code
+//
+Color ANA_GetParseErrorColour(int err_code);
+
+//	Get a constant char pointer to the name of a DOS disk error
+//
+const char *ANA_GetDiskErrorName(uint8_t err_code);
+
+//	Get a colour for a DOS disk error code
+//
+Color ANA_GetDiskErrorColour(uint8_t  err_code);
 
 
 #endif
