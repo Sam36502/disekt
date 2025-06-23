@@ -1,4 +1,4 @@
-#include "../include/recon.h"
+#include "../include/analysis.h"
 
 
 bool REC_Sector_HasData(FILE *f_disk, DSK_Position pos) {
@@ -17,30 +17,76 @@ bool REC_Sector_HasData(FILE *f_disk, DSK_Position pos) {
 	return false;
 }
 
-int REC_AnalyseDisk(FILE *f_disk, FILE *f_meta, DSK_Directory dir, REC_Analysis *analysis) {
+int ANA_AnalyseDisk(FILE *f_disk, FILE *f_meta, DSK_Directory dir, ANA_DiskInfo *analysis) {
 	if (f_disk == NULL || analysis == NULL) return 1;
 
-	// Initialise analysis struct
-	for (int i=0; i<MAX_ANALYSIS_ENTRIES; i++) {
-		analysis->entries[i] = (REC_Entry){
-			.type = SECTYPE_INVALID,
-			.status = SECSTAT_INVALID,
-			.file_index = -1,
-			.dir_entry = { SECTYPE_INVALID, { 0, 0 }, "", 0 },
-			.dir_index = -1,
-			.checksum = 0x0000,
-		};
+	analysis->dir = dir;
+
+	// TODO: More initial checks (can we find the BAM? Is it valid? Is the header/directory valid? etc.)
+	// For now we're just assuming that the provided parsed BAM and directories are healthy
+
+	// Initialise analysis struct with basic information
+	for (int t=MIN_TRACKS; t<=MAX_TRACKS; t++) {
+		for (int s=0; s<21; s++) {
+			DSK_Position pos = { t, s };
+			int index = DSK_PositionToIndex(pos);
+			if (index < 0) continue;
+
+			DSK_SectorType type = SECTYPE_INVALID;
+			if (t == 18 && s == 0) type = SECTYPE_BAM;
+
+			analysis->sectors[index] = (ANA_SectorInfo){
+				.pos = pos,
+				.type = type,
+				.status = SECSTAT_UNKNOWN,
+			
+				.is_free = (dir.bam.entries[pos.track - 1] >> (8 + pos.sector)) & 0b1,
+				.has_transfer_info = false,
+				.has_directory_info = false,
+
+				.file_index = -1,
+				.dir_index = -1,
+
+				.checksum = 0x0000,
+				.disk_err = 0xFF,
+				.parse_err = 0xFF,
+			};
+
+			// Get the metadata entry if available
+			if (f_meta != NULL) {
+				NYB_DataBlock block;
+				block.track_num = t;
+				block.sector_index = s;
+				int err = NYB_Meta_ReadBlock(f_meta, &block);
+
+				if (err == 0 && block.block_status != 0x00) {
+					analysis->sectors[index].has_transfer_info = true;
+					analysis->sectors[index].checksum = block.checksum;
+					analysis->sectors[index].disk_err = block.err_code | 0x80;
+					analysis->sectors[index].parse_err = block.parse_error;
+
+					// TODO: Replace
+					if (block.checksum != DSK_Checksum(block.data)) analysis->sectors[index].status = SECSTAT_CORRUPTED;
+					else analysis->sectors[index].status = SECSTAT_CONFIRMED;
+					if (block.parse_error != 0x00) analysis->sectors[index].status = SECSTAT_CORRUPTED;
+				}
+				memcpy(analysis->sectors[index].data, block.data, BLOCK_SIZE);
+			} else {
+				DSK_File_GetData(f_disk, pos, analysis->sectors[index].data, BLOCK_SIZE);
+			}
+
+		}
 	}
 
-	//	Traverse the known directory sectors on track 18
+	//	Find the directory blocks on track 18
 	DSK_Position pos;
 	DSK_File_SeekPosition(f_disk, DSK_POSITION_BAM);
 	fread(&pos, sizeof(DSK_Position), 1, f_disk);
 
 	int index = DSK_PositionToIndex(pos);
 	while (index >= 0) {
-		analysis->entries[index].type = SECTYPE_DIR;
-		analysis->entries[index].status = SECSTAT_GOOD;	// TODO: Check if dir block is actually good
+		analysis->sectors[index].type = SECTYPE_DIR;
+		analysis->sectors[index].status = SECSTAT_GOOD;	// TODO: Check if dir block is actually good
 
 		DSK_File_SeekPosition(f_disk, pos);
 		fread(&pos, sizeof(DSK_Position), 1, f_disk);
@@ -51,23 +97,21 @@ int REC_AnalyseDisk(FILE *f_disk, FILE *f_meta, DSK_Directory dir, REC_Analysis 
 	for (int i=0; i<dir.num_entries; i++) {
 		DSK_DirEntry entry = dir.entries[i];
 
-		DSK_Position pos = entry.pos;
+		DSK_Position pos = entry.head_pos;
 		int index = DSK_PositionToIndex(pos);
 		int num = 0;
 		while (index >= 0 && num < entry.block_count) {
-			//printf("---> Adding dir entry for sector [% 3i/% 3i]; File block %i/%i\n",
-			//	pos.track, pos.sector, num+1, entry.block_count
-			//);
-			analysis->entries[index].dir_entry = entry;
-			analysis->entries[index].dir_index = i;
-			analysis->entries[index].file_index = num;
-			analysis->entries[index].type = entry.filetype;
-			analysis->entries[index].status = SECSTAT_UNKNOWN;
+			analysis->sectors[index].has_directory_info = true;
+			analysis->sectors[index].dir_entry = entry;
+			analysis->sectors[index].dir_index = i;
+			analysis->sectors[index].file_index = num;
+			analysis->sectors[index].type = entry.type;
+			analysis->sectors[index].status = SECSTAT_UNKNOWN;
 
 			DSK_File_SeekPosition(f_disk, pos);
 			int n = fread(&pos, sizeof(DSK_Position), 1, f_disk);
 			if (n != 1) {
-				analysis->entries[index].status = SECSTAT_BAD;
+				analysis->sectors[index].status = SECSTAT_BAD;
 				break;
 			}
 
@@ -75,91 +119,32 @@ int REC_AnalyseDisk(FILE *f_disk, FILE *f_meta, DSK_Directory dir, REC_Analysis 
 			// For now: Count them as "good" so long as their next block pointer is valid
 			if (num < entry.block_count-1) {
 				if (DSK_IsPositionValid(pos)) {
-					analysis->entries[index].status = SECSTAT_GOOD;
+					analysis->sectors[index].status = SECSTAT_GOOD;
 				} else {
-					analysis->entries[index].status = SECSTAT_BAD;
+					analysis->sectors[index].status = SECSTAT_BAD;
 				}
 			} else {
-				if (pos.track == 0x00 && pos.sector == 0xFF) analysis->entries[index].status = SECSTAT_GOOD;
+				if (pos.track == 0x00 && pos.sector == 0xFF) analysis->sectors[index].status = SECSTAT_GOOD;
 				// TODO: Does it matter in the last block of a file?
 				// Need to find out...
 			}
 
-			//printf("---> Next block in file: [% 3i/% 3i]\n", pos.track, pos.sector);
 			index = DSK_PositionToIndex(pos);
 			num++;
 		}
 
 	}
 
-	// Check all other sectors
-	for (int t=MIN_TRACKS; t<=MAX_TRACKS; t++) {
-		for (int s=0; s<21; s++) {
-			DSK_Position pos = { t, s };
-			int index = DSK_PositionToIndex(pos);
-			if (index < 0) continue;
-
-			// Get the metadata entry if available
-			analysis->entries[index].checksum = 0x0000;
-			analysis->entries[index].disk_err = 0x00;
-			if (f_meta != NULL) {
-				NYB_DataBlock block;
-				block.track_num = t;
-				block.sector_index = s;
-				int err = NYB_Meta_ReadBlock(f_meta, &block);
-				if (err == 0 && block.block_status != 0x00) {
-					analysis->entries[index].checksum = block.checksum;
-					if (block.checksum != DSK_Checksum(block.data)) analysis->entries[index].status = SECSTAT_CORRUPTED;
-					else analysis->entries[index].status = SECSTAT_CONFIRMED;
-
-					analysis->entries[index].disk_err = block.err_code | 0x80;
-					analysis->entries[index].disk_err |= block.parse_error;
-					if (block.parse_error != 0x00) analysis->entries[index].status = SECSTAT_CORRUPTED;
-				}
-			}
-
-			//if (analysis->entries[index].type != SECTYPE_INVALID) continue; // Skip entries we've already checked
-
-			bool has_data = REC_Sector_HasData(f_disk, pos);
-			bool is_free = (dir.bam.entries[pos.track - 1] >> (8 + pos.sector)) & 1;
-			DSK_SectorType type = analysis->entries[index].type;
-			REC_Status stat = analysis->entries[index].status;
-
-			if (type == SECTYPE_INVALID) {
-				if (t == 18 && s == 0) {
-					type = SECTYPE_BAM;
-					stat = SECSTAT_GOOD;	// TODO: Check if the BAM really matches the expected format on load
-				} else {
-					type = SECTYPE_NONE;
-					stat = SECSTAT_UNKNOWN;
-				}
-			}
-
-			if (stat == SECSTAT_INVALID || stat == SECSTAT_UNKNOWN) {
-				if (is_free) {
-					if (has_data) stat = SECSTAT_UNEXPECTED;
-					else stat = SECSTAT_EMPTY;
-				} else {
-					if (has_data) stat = SECSTAT_PRESENT;
-					else stat = SECSTAT_MISSING;
-				}
-			}
-
-			analysis->entries[index].type = type;
-			analysis->entries[index].status = stat;
-		}
-	}
-
 	return 0;
 }
 
-int REC_GetInfo(REC_Analysis analysis, DSK_Position pos, REC_Entry *entry) {
+int ANA_GetInfo(ANA_DiskInfo analysis, DSK_Position pos, ANA_SectorInfo *entry) {
 	if (entry == NULL) return 1;
 
 	int index = DSK_PositionToIndex(pos);
 	if (index < 0) return 2;
 
-	memcpy(entry, &(analysis.entries[index]), sizeof(REC_Entry));
+	*entry = analysis.sectors[index];
 	return 0;
 }
 
@@ -247,7 +232,7 @@ Color __hsv_to_rgb(double h, double s, double v) {
 	};
 }
 
-Color REC_GetFileColour(DSK_Directory dir, REC_Entry entry, bool is_hovered, bool is_selected) {
+Color ANA_GetFileColour(DSK_Directory dir, ANA_SectorInfo entry, bool is_hovered, bool is_selected) {
 	if (entry.dir_index < 0) return LIGHTGRAY;
 
 	Color clr = __hsv_to_rgb(
@@ -260,7 +245,7 @@ Color REC_GetFileColour(DSK_Directory dir, REC_Entry entry, bool is_hovered, boo
 	return clr;
 }
 
-const char *REC_GetTestResultName(REC_TestResult result) {
+const char *ANA_GetTestResultName(ANA_TestResult result) {
 	switch (result) {
 		case TEST_SKIPPED: return "SKIPPED";
 		case TEST_FAILED: return "FAILED";
@@ -269,7 +254,7 @@ const char *REC_GetTestResultName(REC_TestResult result) {
 	}
 }
 
-Color REC_GetTestResultColour(REC_TestResult result) {
+Color ANA_GetTestResultColour(ANA_TestResult result) {
 	switch (result) {
 		case TEST_SKIPPED: return GRAY;
 		case TEST_FAILED: return RED;
@@ -328,9 +313,9 @@ Color REC_GetTestResultColour(REC_TestResult result) {
 //	return 0;
 //}
 //
-//REC_Entry REC_FindEntry(REC_File *rec, REC_RecordType type, int index) {
-//	if (rec == NULL) return (REC_Entry){};
+//ANA_SectorInfo REC_FindEntry(REC_File *rec, REC_RecordType type, int index) {
+//	if (rec == NULL) return (ANA_SectorInfo){};
 //
-//	return (REC_Entry){};
+//	return (ANA_SectorInfo){};
 //}
 

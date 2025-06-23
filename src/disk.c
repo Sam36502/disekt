@@ -155,8 +155,8 @@ int DSK_File_ParseDirectory(FILE *f_disk, DSK_Directory *dir) {
 			index += sizeof(uint16_t);
 
 			dir->entries[dir->num_entries] = (DSK_DirEntry){
-				.filetype = type,
-				.pos = pos,
+				.type = type,
+				.head_pos = pos,
 				.block_count = num_blocks,
 			};
 
@@ -212,8 +212,8 @@ void DSK_PrintDirectory(DSK_Directory dir) {
 	for (int i=0; i<dir.num_entries; i++) {
 		DSK_DirEntry e = dir.entries[i];
 		printf(" % 4i: [% 3i/% 3i] (%s) \"%s\" contains %i blocks\n", i,
-			e.pos.track, e.pos.sector,
-			DSK_Sector_GetTypeName((DSK_SectorType) e.filetype), e.filename,
+			e.head_pos.track, e.head_pos.sector,
+			DSK_Sector_GetTypeName((DSK_SectorType) e.type), e.filename,
 			e.block_count
 		);
 	}
@@ -262,11 +262,6 @@ char *DSK_GetName(DSK_Directory dir) {
 
 const char *DSK_Sector_GetTypeName(DSK_SectorType type) {
 	switch(type) {
-		case SECTYPE_DEL_CORPSE: return "Deleted Block [CORPSE]";
-		case SECTYPE_SEQ_CORPSE: return "Sequential Data Block [CORPSE]";
-		case SECTYPE_PRG_CORPSE: return "Program Block [CORPSE]";
-		case SECTYPE_USR_CORPSE: return "User Data Block [CORPSE]";
-		case SECTYPE_REL_CORPSE: return "Relative Data Block [CORPSE]";
 		case SECTYPE_DEL: return "Deleted Block";
 		case SECTYPE_SEQ: return "Sequential Data Block";
 		case SECTYPE_PRG: return "Program Block";
@@ -282,11 +277,6 @@ const char *DSK_Sector_GetTypeName(DSK_SectorType type) {
 
 Color DSK_Sector_GetTypeColour(DSK_SectorType type) {
 	switch(type) {
-		case SECTYPE_DEL_CORPSE: return BLACK;
-		case SECTYPE_SEQ_CORPSE: return DARKGREEN;
-		case SECTYPE_PRG_CORPSE: return DARKBLUE;
-		case SECTYPE_USR_CORPSE: return MAROON;
-		case SECTYPE_REL_CORPSE: return DARKPURPLE;
 		case SECTYPE_DEL: return BLACK;
 		case SECTYPE_SEQ: return GREEN;
 		case SECTYPE_PRG: return BLUE;

@@ -15,7 +15,7 @@
 
 #define MIN_TRACKS 1		// Track numbers range from 1 - 35
 #define MAX_TRACKS 35
-#define SECTOR_SIZE 0x100	// A single disk sector is 256 Bytes
+#define BLOCK_SIZE 0x100	// A single disk sector is 256 Bytes
 #define TRACK_GAPS 2		// How many pixels between each track
 #define SECTOR_GAPS 8.0f	// How much of a gap to leave between each sector
 #define SPINDLE_RADIUS 50	// in px
@@ -23,8 +23,7 @@
 #define DISK_CENTRE_X 500	// Disk centre pos
 #define DISK_CENTRE_Y 500
 #define DIR_HEADER_SIZE 113	// From 144 to 256 plus null-terminator
-#define MAX_DIR_ENTRIES 256	// TODO: find actual number
-#define BLOCK_SIZE 0x100
+#define MAX_DIR_ENTRIES 144	// 18 directory sectors; each with 8 entries; rounded up
 
 
 //	
@@ -47,10 +46,14 @@ typedef struct {
 } DSK_BAM;
 
 typedef struct {
-	uint8_t filetype;
-	DSK_Position pos;
-	char filename[17];
-	uint16_t block_count;
+	uint8_t is_corpse : 1;	// Was this file closed correctly last time?
+	uint8_t is_meta : 1;	// Is this my custom type or a 1541 file type?
+	uint8_t __flg_pad : 2;
+	uint8_t type : 4;		// Type number
+
+	DSK_Position head_pos;	// Position of the first block of this file
+	char filename[17];		// Name of the file
+	uint16_t block_count;	// Length of the file in blocks
 } DSK_DirEntry;
 
 typedef struct {
@@ -61,20 +64,15 @@ typedef struct {
 } DSK_Directory;
 
 typedef enum {
-	SECTYPE_DEL_CORPSE = 0x00,
-	SECTYPE_SEQ_CORPSE = 0x01,
-	SECTYPE_PRG_CORPSE = 0x02,
-	SECTYPE_USR_CORPSE = 0x03,
-	SECTYPE_REL_CORPSE = 0x04,
-	SECTYPE_DEL = 0x80,
-	SECTYPE_SEQ = 0x81,
-	SECTYPE_PRG = 0x82,
-	SECTYPE_USR = 0x83,
-	SECTYPE_REL = 0x84,
-	SECTYPE_NONE = 0xF0,
-	SECTYPE_BAM = 0xF1,
-	SECTYPE_DIR = 0xF2,
-	SECTYPE_INVALID = 0xFF,
+	SECTYPE_DEL = 0x00,
+	SECTYPE_SEQ = 0x01,
+	SECTYPE_PRG = 0x02,
+	SECTYPE_USR = 0x03,
+	SECTYPE_REL = 0x04,
+	SECTYPE_NONE = 0x40,
+	SECTYPE_BAM = 0x41,
+	SECTYPE_DIR = 0x42,
+	SECTYPE_INVALID = 0x4F,
 } DSK_SectorType;
 
 #define DSK_POSITION_BAM (DSK_Position){ 0x12, 0x00 }

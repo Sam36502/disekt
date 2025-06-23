@@ -7,7 +7,7 @@
 
 #include "../include/debug.h"
 #include "../include/disk.h"
-#include "../include/recon.h"
+#include "../include/analysis.h"
 #include "../include/nyblog.h"
 
 
@@ -24,6 +24,7 @@
 
 
 // Function Declarations
+void draw_text(const char *text, int x, int y, int align, Color clr);
 void parse_args(int argc, char *argv[], char **log_filename, char **recon_filename, char **disk_filename);
 void usage();
 void version();
@@ -135,41 +136,47 @@ int main(int argc, char *argv[]) {
 	);
 	SetTargetFPS(FRAMERATE);
 
-	// Perform reconciliation analysis
-	DSK_Position curr_sector = DSK_POSITION_BAM;
-	REC_Analysis analysis;
-	err = REC_AnalyseDisk(f_disk, f_meta, dir, &analysis);
-	if (err != 0) printf("Failed to analyse disk: Err-code %i\n", err);
 
-	uint8_t curr_data[BLOCK_SIZE];
-	uint16_t curr_checksum = 0x0000;
-	DSK_File_GetData(f_disk, curr_sector, curr_data, BLOCK_SIZE);
-	curr_checksum = DSK_Checksum(curr_data);
+	// Perform Disk Analysis
+	ANA_DiskInfo analysis;
+	err = ANA_AnalyseDisk(f_disk, f_meta, dir, &analysis);
+	if (err != 0) {
+		printf("Failed to analyse disk: Err-code %i\n", err);
+		return EXIT_FAILURE;
+	}
 	if (f_meta != NULL) fclose(f_meta);
 	fclose(f_disk);
 
-	bool redraw = true;
-	bool hex_mode = false;
+
+	//	Main Drawing Loop
+
+	DSK_Position curr_pos = DSK_POSITION_BAM;
+	ANA_SectorInfo curr_sector;
+	uint16_t curr_checksum = 0x0000;
+	err = ANA_GetInfo(analysis, curr_pos, &curr_sector);
+	if (err != 0) {
+		printf("Failed to get info for current sector (% 3i/% 3i): Err-code %i\n", curr_pos.track, curr_pos.sector, err);
+		return EXIT_FAILURE;
+	} else {
+		curr_checksum = DSK_Checksum(curr_sector.data);
+	}
+	char *name = DSK_GetName(dir);
+
 	enum {
 		VIEW_SECTYPE = 0, 
 		VIEW_SECSTAT = 1, 
 		VIEW_FILES = 2, 
 	} view_mode = VIEW_SECTYPE;
-	char *name = DSK_GetName(dir);
-
-
-	// Main Loop
+	bool redraw = true;
+	bool hex_mode = false;
 	while (!WindowShouldClose()) {
 
 		// Handle inputs
 		DSK_Position hov = DSK_GetHoveredSector();
+		bool sector_changed = false;
 		if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-			curr_sector = hov;
-
-			f_disk = fopen(disk_filename, "rb");
-			DSK_File_GetData(f_disk, curr_sector, curr_data, BLOCK_SIZE);
-			curr_checksum = DSK_Checksum(curr_data);
-			fclose(f_disk);
+			curr_pos = hov;
+			sector_changed = true;
 		}
 
 		int key = GetKeyPressed();
@@ -177,18 +184,28 @@ int main(int argc, char *argv[]) {
 			switch (key) {
 				case KEY_TOGGLE_HEX_MODE: { hex_mode = !hex_mode; } break;
 				case KEY_TOGGLE_VIEW_MODE: { view_mode++; view_mode %= 3; } break;
-				case KEY_ARROW_UP: { if (curr_sector.track < 35) curr_sector.track++; } break;
-				case KEY_ARROW_DOWN: { if (curr_sector.track > 1) curr_sector.track--; } break;
-				case KEY_ARROW_LEFT: { curr_sector.sector--; } break;
-				case KEY_ARROW_RIGHT: { curr_sector.sector++; } break;
+				case KEY_ARROW_UP: { if (curr_pos.track < 35) curr_pos.track++; sector_changed = true; } break;
+				case KEY_ARROW_DOWN: { if (curr_pos.track > 1) curr_pos.track--; sector_changed = true; } break;
+				case KEY_ARROW_LEFT: { curr_pos.sector--; sector_changed = true; } break;
+				case KEY_ARROW_RIGHT: { curr_pos.sector++; sector_changed = true; } break;
 			}
-			int secs = DSK_Track_GetSectorCount(curr_sector.track);
-			if (curr_sector.sector > 0x80) curr_sector.sector = secs - 1;
-			if (curr_sector.sector >= secs) curr_sector.sector = 0;
+			int secs = DSK_Track_GetSectorCount(curr_pos.track);
+			if (curr_pos.sector > 0x80) curr_pos.sector = secs - 1;
+			if (curr_pos.sector >= secs) curr_pos.sector = 0;
 
 			redraw = true;
 
 			redraw |= DEBUG_HandleEvents(key);
+		}
+
+		if (sector_changed) {
+			err = ANA_GetInfo(analysis, curr_pos, &curr_sector);
+			if (err != 0) {
+				printf("Failed to get info for current sector (% 3i/% 3i): Err-code %i\n", curr_pos.track, curr_pos.sector, err);
+				return EXIT_FAILURE;
+			} else {
+				curr_checksum = DSK_Checksum(curr_sector.data);
+			}
 		}
 		
 		if (redraw) {
@@ -197,10 +214,10 @@ int main(int argc, char *argv[]) {
 			// Clear Background
 			ClearBackground(RAYWHITE);
 
-			REC_Entry curr_info;
-			REC_GetInfo(analysis, curr_sector, &curr_info);
-			REC_Entry hov_info;
-			REC_GetInfo(analysis, hov, &hov_info);
+			int hov_dir_index = -1;
+			ANA_SectorInfo hov_info;
+			err = ANA_GetInfo(analysis, hov, &hov_info);
+			if (err == 0) hov_dir_index = hov_info.dir_index;
 
 			// Draw Disk-Sectors
 			for (int t=MIN_TRACKS; t<=MAX_TRACKS; t++) {
@@ -209,13 +226,17 @@ int main(int argc, char *argv[]) {
 					DSK_Position pos = { t, s };
 					DSK_DrawMode dm = DSK_DRAW_NORMAL;
 
-					REC_Entry info;
-					REC_GetInfo(analysis, pos, &info);
+					ANA_SectorInfo info;
+					err = ANA_GetInfo(analysis, pos, &info);
+					if (err != 0) {
+						DSK_Sector_Draw(dir, pos, dm, MAGENTA);
+						continue;
+					}
 
 					if (pos.track == hov.track && pos.sector == hov.sector) {
 						dm = DSK_DRAW_HIGHLIGHT;
 					}
-					if (pos.track == curr_sector.track && pos.sector == curr_sector.sector) {
+					if (pos.track == curr_pos.track && pos.sector == curr_pos.sector) {
 						dm = DSK_DRAW_SELECTED;
 					}
 
@@ -223,9 +244,9 @@ int main(int argc, char *argv[]) {
 					switch (view_mode) {
 						case VIEW_SECTYPE: clr = DSK_Sector_GetTypeColour(info.type); break;
 						case VIEW_SECSTAT: clr = REC_GetStatusColour(info.status); break;
-						case VIEW_FILES: clr = REC_GetFileColour(dir, info,
-							(hov_info.dir_index == info.dir_index),
-							(curr_info.dir_index == info.dir_index)
+						case VIEW_FILES: clr = ANA_GetFileColour(dir, info,
+							(hov_dir_index == info.dir_index),
+							(curr_sector.dir_index == info.dir_index)
 						); break;
 					}
 
@@ -237,40 +258,46 @@ int main(int argc, char *argv[]) {
 			const int info_tab_x = info_x + (16 * 12);
 
 			// Draw Title
-			char buf[256];
-			snprintf(buf, 256, "%s", name);
-			DrawText(buf, 10, 10, 20, RED);
-			snprintf(buf, 256, "\"%s\"", disk_filename);
-			DrawText(buf, 10, 30, 20, BLACK);
+			draw_text(name, 10, 10, -1, RED);
+			draw_text(TextFormat("\"%s\"", disk_filename),
+				10, 30, -1, BLACK
+			);
 
 			// Draw Currently selected sector pos & hovered sector pos
-			snprintf(buf, 256, "[% 3i/% 3i]", curr_sector.track, curr_sector.sector);
-			DrawText(buf, 10, SCREEN_HEIGHT - 10 - 20, 20, ORANGE);
 			if (DSK_IsPositionValid(hov)) {
-				snprintf(buf, 256, "[% 3i/% 3i]", hov.track, hov.sector);
+				draw_text(TextFormat("[% 3i/% 3i]", hov.track, hov.sector),
+					10, SCREEN_HEIGHT - 50, -1, GRAY
+				);
 			} else {
-				snprintf(buf, 256, "[---/---]");
+				draw_text("[---/---]",
+					10, SCREEN_HEIGHT - 50, -1, GRAY
+				);
 			}
-			DrawText(buf, 10 + (9 * 12), SCREEN_HEIGHT - 10 - 20, 20, BLACK);
+			draw_text(TextFormat("[% 3i/% 3i]", curr_pos.track, curr_pos.sector),
+				10, SCREEN_HEIGHT - 30, -1, BLACK
+			);
 
 			// Draw current view mode name
-			DrawText("View Mode [F2]", info_x - 10 - (14 * 11), SCREEN_HEIGHT - 10 - 45, 20, BLACK);
+			draw_text("View Mode [F2]",
+				info_x - 10, SCREEN_HEIGHT - 50, 1, BLACK
+			);
 			switch (view_mode) {
-				case 0: DrawText("Sector Type",
-					info_x - 10 - (12 * 12), SCREEN_HEIGHT - 10 - 20,
-					20, BLUE
+				case VIEW_SECTYPE: draw_text("Sector Type",
+					info_x - 10, SCREEN_HEIGHT - 30, 1, BLACK
 				); break;
-				case 1: DrawText("Sector Status",
-					info_x - 10 - (13 * 12), SCREEN_HEIGHT - 10 - 20,
-					20, ORANGE
+				case VIEW_SECSTAT: draw_text("Sector Status",
+					info_x - 10, SCREEN_HEIGHT - 30, 1, BLACK
 				); break;
-				case 2: DrawText("File Blocks",
-					info_x - 10 - (10 * 12), SCREEN_HEIGHT - 10 - 20,
-					20, GRAY
+				case VIEW_FILES: draw_text("File Blocks",
+					info_x - 10, SCREEN_HEIGHT - 30, 1, BLACK
 				); break;
 			}
 
+			// TODO: Draw full disk usage & analysis stats in top-right corner
+
+
 			// Draw Sector Info
+
 			DrawLineEx(
 				(Vector2){ info_x, 10 },
 				(Vector2){ info_x, SCREEN_HEIGHT - 10 },
@@ -283,48 +310,65 @@ int main(int argc, char *argv[]) {
 			);
 
 			int line_num = 0;
-			snprintf(buf, 256, "Current Sector Info:");
-			DrawText(buf, info_x + 10, 10 + (line_num++ * 20), 20, BLACK);
+			draw_text("Current Sector Info:",
+					info_x + 10, 10 + (line_num++ * 20), -1, BLACK
+			);
 			line_num++;
 
-			snprintf(buf, 256, "%16s", "Sector Type:");
-			DrawText(buf, info_x + 10, 10 + (line_num * 20), 20, BLACK);
-			snprintf(buf, 256, "%s", DSK_Sector_GetTypeName(curr_info.type));
-			DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, DSK_Sector_GetTypeColour(curr_info.type));
+			draw_text("Sector Type:",
+					info_tab_x - 5, 10 + (line_num * 20), 1, BLACK
+			);
+			draw_text(DSK_Sector_GetTypeName(curr_sector.type),
+					info_tab_x + 5, 10 + (line_num++ * 20), -1, DSK_Sector_GetTypeColour(curr_sector.type)
+			);
 
-			snprintf(buf, 256, "%16s", "Sector Status:");
-			DrawText(buf, info_x + 10, 10 + (line_num * 20), 20, BLACK);
-			snprintf(buf, 256, "%s", REC_GetStatusName(curr_info.status));
-			DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, REC_GetStatusColour(curr_info.status));
+			// TODO: Replace with list of tests
+			draw_text("Sector Status:",
+					info_tab_x - 5, 10 + (line_num * 20), 1, BLACK
+			);
+			draw_text(REC_GetStatusName(curr_sector.status),
+					info_tab_x + 5, 10 + (line_num++ * 20), -1, REC_GetStatusColour(curr_sector.status)
+			);
 
-			snprintf(buf, 256, "%16s", "Checksum:");
-			DrawText(buf, info_x + 10, 10 + (line_num * 20), 20, BLACK);
-			if (recon_filename != NULL && (curr_info.disk_err & 0x80) != 0x00) {
-				snprintf(buf, 256, "0x%04X [%s]", curr_checksum, (curr_checksum == curr_info.checksum) ? "MATCH":"BREAK");
-				DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, REC_GetStatusColour(curr_info.status));
+			draw_text("Checksum:",
+					info_tab_x - 5, 10 + (line_num * 20), 1, BLACK
+			);
+			if (curr_sector.has_transfer_info) {
+				draw_text(TextFormat("0x%04X - 0x%04X [%s]",
+						curr_checksum, curr_sector.checksum,
+						(curr_checksum == curr_sector.checksum) ? "MATCH":"BREAK"
+					), info_tab_x + 5, 10 + (line_num++ * 20), -1,
+					REC_GetStatusColour(curr_sector.status)
+				);
 			} else {
-				snprintf(buf, 256, "0x%04X", curr_checksum);
-				DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, DARKGRAY);
+				draw_text(TextFormat("0x%04X", curr_checksum),
+					info_tab_x + 5, 10 + (line_num++ * 20), -1,
+					GRAY
+				);
 			}
 
-			snprintf(buf, 256, "%16s", "Disk Error:");
-			DrawText(buf, info_x + 10, 10 + (line_num * 20), 20, BLACK);
-			if (recon_filename != NULL && (curr_info.disk_err & 0x80) != 0) {
-				uint8_t e = curr_info.disk_err & ~0x80;
-				snprintf(buf, 256, "%i [%s]", e, (e == 0x00) ? "OK":"ERR");
-				DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, REC_GetStatusColour(curr_info.status));
-			} else {
-				snprintf(buf, 256, "%i", curr_info.disk_err);
-				DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, DARKGRAY);
+			if (curr_sector.has_transfer_info) {
+				draw_text("Disk Error:",
+						info_tab_x - 5, 10 + (line_num * 20), 1, BLACK
+				);
+
+				uint8_t e = curr_sector.disk_err & ~0x80;
+				// TODO: Replace with text from an error-code table
+				draw_text(TextFormat("%i [%s]", e, (e == 0x00) ? "OK":"ERR"),
+					info_tab_x + 5, 10 + (line_num++ * 20), -1,
+					(e == 0x00) ? GREEN : RED
+				);
 			}
 
 			// Draw specific sector info
 			line_num += 2;
-			switch (curr_info.type) {
+			switch (curr_sector.type) {
 
 				case SECTYPE_BAM: {
-					snprintf(buf, 256, "Full Header Text:");
-					DrawText(buf, info_x + 20, 10 + (line_num++ * 20), 20, BLACK);
+					draw_text("Full Header Text:",
+						info_x + 10, 10 + (line_num++ * 20), -1,
+						BLACK
+					);
 					line_num++;
 
 					char *desc = DSK_GetDescription(dir);
@@ -336,8 +380,10 @@ int main(int argc, char *argv[]) {
 						if (i >= desclen-1 || desc[i] == '\n') i++;
 						int len = i - prev;
 
-						snprintf(buf, 256, "%.*s", len, str);
-						DrawText(buf, info_x + 20, 10 + (line_num++ * 20), 20, DARKGRAY);
+						draw_text(TextFormat("%.*s", len, str),
+							info_x + 20, 10 + (line_num++ * 20), -1,
+							GRAY
+						);
 
 						prev = i;
 						str = desc + i;
@@ -346,18 +392,19 @@ int main(int argc, char *argv[]) {
 
 				case SECTYPE_PRG:
 				case SECTYPE_REL:
-				case SECTYPE_SEQ:
-				case SECTYPE_PRG_CORPSE:
-				case SECTYPE_REL_CORPSE:
-				case SECTYPE_SEQ_CORPSE: {
-
-					snprintf(buf, 256, "%16s", "File:");
-					DrawText(buf, info_x + 10, 10 + (line_num * 20), 20, BLACK);
-					snprintf(buf, 256, "%s", curr_info.dir_entry.filename);
-					DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, ORANGE);
-
-					snprintf(buf, 256, "Block %i / %i", curr_info.file_index+1, curr_info.dir_entry.block_count);
-					DrawText(buf, info_tab_x, 10 + (line_num++ * 20), 20, BLACK);
+				case SECTYPE_SEQ: {
+					draw_text("File:",
+						info_tab_x - 5, 10 + (line_num * 20), 1,
+						BLACK
+					);
+					draw_text(curr_sector.dir_entry.filename,
+						info_tab_x + 5, 10 + (line_num++ * 20), -1,
+						DSK_Sector_GetTypeColour(curr_sector.dir_entry.type)
+					);
+					draw_text(TextFormat("Block %i / %i", curr_sector.file_index+1, curr_sector.dir_entry.block_count),
+						info_tab_x + 0, 10 + (line_num++ * 20), 0,
+						BLACK
+					);
 				} break;
 
 				default: break;
@@ -365,15 +412,19 @@ int main(int argc, char *argv[]) {
 
 			// Display Sector contents
 			line_num = 31;
-			snprintf(buf, 256, "Sector Contents:");
-			DrawText(buf, info_x + 20, 10 + (line_num * 20), 20, BLACK);
-			snprintf(buf, 256, "%6s [F1]", hex_mode ? "HEX":"ASCII");
-			DrawText(buf, SCREEN_WIDTH - 10 - (10 * 11), 10 + (line_num++ * 20), 20, BLUE);
+			draw_text("Sector Contents:",
+				info_x + 10, 10 + (line_num * 20), -1,
+				BLACK
+			);
+			draw_text(hex_mode ? "HEX [F1]":"ASCII [F1]",
+				SCREEN_WIDTH - 10, 10 + (line_num++ * 20), 1,
+				BLUE
+			);
 			line_num++;
 
 			DSK_DrawData(
 				info_x + 20, 10 + (line_num * 20),
-				curr_data, BLOCK_SIZE,
+				curr_sector.data, BLOCK_SIZE,
 				hex_mode, true
 			);
 
@@ -387,6 +438,19 @@ int main(int argc, char *argv[]) {
 	// Terminate Raylib
 	CloseWindow();
 	return 0;
+}
+
+
+void draw_text(const char *text, int x, int y, int align, Color clr) {
+	int len = MeasureText(text, 20);
+
+	if (align != 0) align = align / abs(align);
+	switch (align) {
+		case -1: DrawText(text, x, y, 20, clr); return;
+		case  0: DrawText(text, x - (len/2), y, 20, clr); return;
+		case +1: DrawText(text, x - len, y, 20, clr); return;
+	}
+
 }
 
 void parse_args(int argc, char *argv[], char **log_filename, char **recon_filename, char **disk_filename) {

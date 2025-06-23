@@ -180,7 +180,7 @@ int NYB_Meta_ReadBlock(FILE *f_meta, NYB_DataBlock *block) {
 	DSK_Position blockpos = { block->track_num, block->sector_index };
 	int block_index = DSK_PositionToIndex(blockpos);
 	if (block_index < 0) {
-		printf("Error: Failed to read sector metadata from file; Invalid position [% i/% i]\n", blockpos.track, blockpos.sector);
+		if (g_verbose_log) printf("Error: Failed to read sector metadata from file; Invalid position [% i/% i]\n", blockpos.track, blockpos.sector);
 		return 2;
 	}
 
