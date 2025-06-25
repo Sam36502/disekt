@@ -150,7 +150,6 @@ int main(int argc, char *argv[]) {
 	if (f_meta != NULL) fclose(f_meta);
 	fclose(f_disk);
 
-
 	//	Main Drawing Loop
 
 	DSK_Position curr_pos = DSK_POSITION_BAM;
@@ -167,6 +166,16 @@ int main(int argc, char *argv[]) {
 
 	const int info_x = DISK_CENTRE_X * 2;
 	const int info_tab_x = info_x + (16 * 12);
+
+	// Button Rectangles
+	const Rectangle btnrect_previous = {
+		info_x + 10, 10 + (28 * 20),
+		80, 40,
+	};
+	const Rectangle btnrect_next = {
+		info_x + 20 + 80, 10 + (28 * 20),
+		80, 40,
+	};
 
 	enum {
 		VIEW_SECSTAT, 
@@ -190,50 +199,34 @@ int main(int argc, char *argv[]) {
 				sector_changed = true;
 			}
 
-			switch (curr_sector.type) {
-				case SECTYPE_DIR: {
-					for (int i=0; i<dir.num_entries; i++) {
-						Rectangle rect = {
-							info_x + 30, 10 + ((15+i) * 20),
-							50 + MeasureText(dir.entries[i].filename, 20), 20,
-						};
-						//DrawRectangleRec(rect, (Color){ 0xFF, 0x80, 0x40, 0x80 });
-						if (CheckCollisionPointRec(GetMousePosition(), rect)) {
-							curr_pos = dir.entries[i].head_pos;
-							sector_changed = true;
-						}
+			if (curr_sector.type == SECTYPE_DIR) {
+				for (int i=0; i<dir.num_entries && i < 8; i++) {
+					Rectangle rect = {
+						info_x + 30, 10 + ((15+i) * 20),
+						50 + MeasureText(dir.entries[i].filename, 20), 20,
+					};
+					//DrawRectangleRec(rect, (Color){ 0xFF, 0x80, 0x40, 0x80 });
+					if (CheckCollisionPointRec(GetMousePosition(), rect)) {
+						curr_pos = dir.entries[i].head_pos;
+						sector_changed = true;
 					}
-				} break;
+				}
+			}
 
-				case SECTYPE_PRG:
-				case SECTYPE_SEQ:
-				case SECTYPE_REL:
-				case SECTYPE_DEL:
-				case SECTYPE_USR: {
-
-					// Next Button
-					if (curr_sector.file_index < curr_sector.dir_entry.block_count - 1) {
-						Rectangle rect = {
-							info_x + 10, 10 + (20 * 20),
-							40 + MeasureText("Next Block", 20), 40,
-						};
-						if (CheckCollisionPointRec(GetMousePosition(), rect)) {
-							// TODO: Map file blocks previous/next positions
-							for (int i=0; i<MAX_ANALYSIS_ENTRIES; i++) {
-								if (analysis.sectors[i].dir_index != curr_sector.dir_index) continue;
-								if (analysis.sectors[i].file_index != curr_sector.file_index+1) continue;
-
-								curr_pos = analysis.sectors[i].pos;
-								sector_changed = true;
-								break;
-							}
-						}
-
-					}
-
-				} break;
-
-				default: break;
+			// Previous Button
+			if (curr_sector.prev_block_index >= 0) {
+				if (CheckCollisionPointRec(GetMousePosition(), btnrect_previous)) {
+					curr_pos = analysis.sectors[curr_sector.prev_block_index].pos;
+					sector_changed = true;
+				}
+			}
+			//
+			// Next Button
+			if (curr_sector.next_block_index >= 0) {
+				if (CheckCollisionPointRec(GetMousePosition(), btnrect_next)) {
+					curr_pos = analysis.sectors[curr_sector.next_block_index].pos;
+					sector_changed = true;
+				}
 			}
 
 		}
@@ -509,7 +502,7 @@ int main(int argc, char *argv[]) {
 					);
 					line_num++;
 
-					for (int i=0; i<dir.num_entries; i++) {
+					for (int i=0; i<dir.num_entries && i<8; i++) {
 						Color clr = GRAY;
 						Rectangle rect = {
 							info_x + 30, 10 + (line_num * 20),
@@ -547,23 +540,45 @@ int main(int argc, char *argv[]) {
 						BLACK
 					);
 
-					line_num = 20;
-					if (curr_sector.file_index < curr_sector.dir_entry.block_count - 1) {
-						Rectangle rect = {
-							info_x + 10, 10 + (20 * 20),
-							40 + MeasureText("Next Block", 20), 40,
-						};
-						Color clr = GRAY;
-						if (CheckCollisionPointRec(GetMousePosition(), rect)) clr = CLR_ACCENT;
-						draw_text(TextFormat("Next Block"),
-							info_x + 30, 20 + (line_num++ * 20), -1, clr
-						);
-						DrawRectangleLinesEx(rect, 2, clr);
-					}
+					//line_num = 20;
+					//if (curr_sector.file_index < curr_sector.dir_entry.block_count - 1) {
+					//	Rectangle rect = {
+					//		info_x + 10, 10 + (20 * 20),
+					//		40 + MeasureText("Next Block", 20), 40,
+					//	};
+					//	Color clr = GRAY;
+					//	if (CheckCollisionPointRec(GetMousePosition(), rect)) clr = CLR_ACCENT;
+					//	draw_text(TextFormat("Next Block"),
+					//		info_x + 30, 20 + (line_num++ * 20), -1, clr
+					//	);
+					//	DrawRectangleLinesEx(rect, 2, clr);
+					//}
 
 				} break;
 
 				default: break;
+			}
+
+			// Previous Button
+			Color clr = GRAY;
+			if (curr_sector.prev_block_index >= 0) {
+				if (CheckCollisionPointRec(GetMousePosition(), btnrect_previous)) clr = CLR_ACCENT;
+				DrawPoly((Vector2){
+					btnrect_previous.x + btnrect_previous.width/2,
+					btnrect_previous.y + btnrect_previous.height/2
+				}, 3, btnrect_previous.height/2 - 8, 60.0f, clr);
+				DrawRectangleLinesEx(btnrect_previous, 2, clr);
+			}
+
+			// Next Button
+			if (curr_sector.next_block_index >= 0) {
+				Color clr = GRAY;
+				if (CheckCollisionPointRec(GetMousePosition(), btnrect_next)) clr = CLR_ACCENT;
+				DrawPoly((Vector2){
+					btnrect_next.x + btnrect_next.width/2,
+					btnrect_next.y + btnrect_next.height/2
+				}, 3, btnrect_next.height/2 - 8, 0.0f, clr);
+				DrawRectangleLinesEx(btnrect_next, 2, clr);
 			}
 
 			// Display Sector contents

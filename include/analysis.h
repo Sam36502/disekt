@@ -53,11 +53,16 @@ typedef struct {
 	DSK_DirEntry dir_entry;			// Which directory file this sector belongs to
 	int file_index;					// Which block of a file this sector holds data for
 	int dir_index;					// Entry number of this block's file in the directory
+									// OR (if this is a directory block) which directory index the first file has
 
 	// Transfer Info
 	uint16_t checksum;				// The checksum calculated before transfer from the C64
 	uint8_t disk_err;				// Error code from the disk if available (OR'd with 0x80 to distinguish from not found)
 	uint8_t parse_err;				// Error code from the nybbler transfer
+
+	// Links
+	int prev_block_index;			// Link to the previous block (if applicable)
+	int next_block_index;			// Link to the next block (if applicable)
 } ANA_SectorInfo;
 
 //	Contains the results of analysing the disk;

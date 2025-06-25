@@ -34,6 +34,9 @@ int ANA_AnalyseDisk(FILE *f_disk, FILE *f_meta, DSK_Directory dir, ANA_DiskInfo 
 				.checksum = 0x0000,
 				.disk_err = 0xFF,
 				.parse_err = 0xFF,
+
+				.prev_block_index = -1,
+				.next_block_index = -1,
 			};
 
 			// Do basic type checks
@@ -109,14 +112,27 @@ int ANA_AnalyseDisk(FILE *f_disk, FILE *f_meta, DSK_Directory dir, ANA_DiskInfo 
 	fread(&pos, sizeof(DSK_Position), 1, f_disk);
 
 	int index = DSK_PositionToIndex(pos);
+	int prev = -1;
+	int dir_file_index = 0;
 	while (index >= 0) {
 		analysis->sectors[index].type = SECTYPE_DIR;
+		analysis->sectors[index].dir_index = dir_file_index;
+
 		if (analysis->sectors[index].status == SECSTAT_UNKNOWN || analysis->sectors[index].status == SECSTAT_PRESENT) {
 			analysis->sectors[index].status = SECSTAT_GOOD;	// TODO: Check if dir block is actually good
 		}
 
+		analysis->sectors[index].prev_block_index = prev;
+		analysis->sectors[index].next_block_index = -1;
+		if (prev >= 0) {
+			analysis->sectors[prev].next_block_index = index;
+		}
+
 		DSK_File_SeekPosition(f_disk, pos);
 		fread(&pos, sizeof(DSK_Position), 1, f_disk);
+
+		dir_file_index += 8;
+		prev = index;
 		index = DSK_PositionToIndex(pos);
 	}
 
@@ -128,12 +144,19 @@ int ANA_AnalyseDisk(FILE *f_disk, FILE *f_meta, DSK_Directory dir, ANA_DiskInfo 
 		int index = DSK_PositionToIndex(pos);
 		ANA_SectorInfo curr = analysis->sectors[index];
 		int num = 0;
+		int prev = -1;
 		while (index >= 0 && num < entry.block_count) {
 			analysis->sectors[index].has_directory_info = true;
 			analysis->sectors[index].dir_entry = entry;
 			analysis->sectors[index].dir_index = i;
 			analysis->sectors[index].file_index = num;
 			analysis->sectors[index].type = entry.type;
+
+			analysis->sectors[index].prev_block_index = prev;
+			analysis->sectors[index].next_block_index = -1;
+			if (prev >= 0) {
+				analysis->sectors[prev].next_block_index = index;
+			}
 
 			DSK_File_SeekPosition(f_disk, pos);
 			int n = fread(&pos, sizeof(DSK_Position), 1, f_disk);
@@ -157,6 +180,7 @@ int ANA_AnalyseDisk(FILE *f_disk, FILE *f_meta, DSK_Directory dir, ANA_DiskInfo 
 				}
 			}
 
+			prev = index;
 			index = DSK_PositionToIndex(pos);
 			num++;
 		}
