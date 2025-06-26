@@ -259,7 +259,7 @@ int NYB_WriteToDiskImage(char *filename, NYB_DataBlock *block_buf, int buf_len) 
 				printf("Skipping due to checksum mismatch (0x%04X =/= 0x%04X)\n", block.checksum, chk);
 				continue;
 			}
-			if (DSK_IsPositionValid(pos)) {
+			if (!DSK_IsPositionValid(pos)) {
 				printf("Skipping due to invalid block position\n");
 				continue;
 			}
@@ -267,7 +267,7 @@ int NYB_WriteToDiskImage(char *filename, NYB_DataBlock *block_buf, int buf_len) 
 
 		if (block.err_code != 0) continue;
 		if (block.checksum != chk) continue;
-		if (DSK_IsPositionValid(pos)) continue;
+		if (!DSK_IsPositionValid(pos)) continue;
 		DSK_File_SeekPosition(f_disk, pos);
 		fwrite(block.data, sizeof(uint8_t), BLOCK_SIZE, f_disk);
 
