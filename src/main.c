@@ -563,10 +563,11 @@ int main(int argc, char *argv[]) {
 								|| binfo.status == SECSTAT_CONFIRMED
 							) good_blocks++;
 							if (binfo.next_block_index != -1) binfo = analysis.sectors[binfo.next_block_index];
+							else binfo.status = SECSTAT_MISSING;
 						}
 						draw_text(TextFormat("%i/%i", good_blocks, entry.block_count),
 							block_rect.x - 10, 10 + (line_num * 20), 1,
-							BLACK
+							(good_blocks < entry.block_count) ? RED:LIME
 						);
 
 					}
@@ -577,11 +578,59 @@ int main(int argc, char *argv[]) {
 				case SECTYPE_USR:
 				case SECTYPE_SEQ: {
 					draw_text("File Information:",
-						info_x + 10, 10 + (line_num++ * 20), -1,
+						info_x + 10, 10 + (line_num * 20), -1,
 						BLACK
+					);
+					draw_text("File Health:",
+						SCREEN_WIDTH - 10, 10 + (line_num * 20), 1,
+						GRAY
 					);
 					line_num++;
 
+					// Draw visualisation of all file sectors
+					DSK_DirEntry entry = curr_sector.dir_entry;
+					ANA_SectorInfo binfo = analysis.sectors[DSK_PositionToIndex(entry.head_pos)];
+					int good_blocks = 0;
+
+					int grid_w = 4;
+					if (entry.block_count > 16) grid_w = 8;
+					if (entry.block_count > 64) grid_w = 12;
+					if (entry.block_count > 144) grid_w = 16;
+					const int grid_screen_w = 250;
+					const int grid_screen_y = 10 + (line_num + 1) * 20;
+					const int grid_screen_x = SCREEN_WIDTH - 20 - grid_screen_w;
+					int block_s = grid_screen_w / grid_w;
+					for (int b=0; b<entry.block_count; b++) {
+						int grid_x = b % grid_w;
+						int grid_y = b / grid_w;
+
+						if (b == curr_sector.file_index) {
+							DrawRectangle(
+								grid_screen_x + block_s * grid_x - 2, grid_screen_y + (grid_y * block_s) - 2 + 20,
+								block_s + 2, block_s + 2,
+								GOLD
+							);
+						}
+						DrawRectangle(
+							grid_screen_x + block_s * grid_x, grid_screen_y + (grid_y * block_s) + 20,
+							block_s - 2, block_s - 2,
+							ANA_GetStatusColour(binfo.status)
+						);
+
+						if (binfo.status == SECSTAT_GOOD
+							|| binfo.status == SECSTAT_PRESENT
+							|| binfo.status == SECSTAT_CONFIRMED
+						) good_blocks++;
+						if (binfo.next_block_index != -1) binfo = analysis.sectors[binfo.next_block_index];
+						else binfo.status = SECSTAT_MISSING;
+					}
+					draw_text(TextFormat("%i/%i good", good_blocks, entry.block_count),
+						SCREEN_WIDTH - 20 - 250, grid_screen_y - 10, -1,
+						(good_blocks < entry.block_count) ? RED : LIME
+					);
+
+					// Write file info
+					line_num++;
 					draw_text(curr_sector.dir_entry.filename,
 						info_x + 20, 10 + (line_num++ * 20), -1,
 						DSK_Sector_GetTypeColour(curr_sector.dir_entry.type)
