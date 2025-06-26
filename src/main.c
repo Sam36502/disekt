@@ -840,7 +840,7 @@ void usage() {
 	printf("  -d, --debug		Enable more verbose logging for debugging\n");
 	printf("  -l <filename>		Parse the text log file provided and write its\n");
 	printf("					contents to the given disk file\n");
-	printf("  -e <filename>		Include information from an external reconciliation\n");
+	printf("  -r <filename>		Include information from an external reconciliation\n");
 	printf("					file. If provided with -l, the log writes the recon\n");
 	printf("					data to this file before loading\n");
 	printf("\n");
