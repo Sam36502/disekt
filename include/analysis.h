@@ -63,6 +63,7 @@ typedef struct {
 	// Links
 	int prev_block_index;			// Link to the previous block (if applicable)
 	int next_block_index;			// Link to the next block (if applicable)
+	int dir_page;					// 
 } ANA_SectorInfo;
 
 //	Contains the results of analysing the disk;

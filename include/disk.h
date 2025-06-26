@@ -98,6 +98,10 @@ int DSK_Track_GetSectorCount(int track_num);
 //
 bool DSK_IsPositionValid(DSK_Position pos);
 
+//	Check if two positions are equal
+//
+bool DSK_PositionsEqual(DSK_Position a, DSK_Position b);
+
 //	Converts a disk position to an index of that position in blocks
 //
 //	Returns -1 if the position is invalid

@@ -26,6 +26,10 @@ int DSK_Track_GetSectorCount(int track_num) {
 	return 17;
 }
 
+bool DSK_PositionsEqual(DSK_Position a, DSK_Position b) {
+	return a.track == b.track && a.sector == b.sector;
+}
+
 bool DSK_IsPositionValid(DSK_Position pos) {
 	if (pos.track < MIN_TRACKS || pos.track > MAX_TRACKS) return false;
 

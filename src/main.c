@@ -286,10 +286,10 @@ int main(int argc, char *argv[]) {
 						continue;
 					}
 
-					if (pos.track == hov.track && pos.sector == hov.sector) {
+					if (DSK_PositionsEqual(pos, hov)) {
 						dm = DSK_DRAW_HIGHLIGHT;
 					}
-					if (pos.track == curr_pos.track && pos.sector == curr_pos.sector) {
+					if (DSK_PositionsEqual(pos, curr_pos)) {
 						dm = DSK_DRAW_SELECTED;
 					}
 
@@ -322,10 +322,16 @@ int main(int argc, char *argv[]) {
 						} break;
 
 						case VIEW_SECTYPE: clr = DSK_Sector_GetTypeColour(info.type); break;
-						case VIEW_FILES: clr = ANA_GetFileColour(dir, info,
-							(hov_dir_index == info.dir_index),
-							(curr_sector.dir_index == info.dir_index)
-						); break;
+						case VIEW_FILES: {
+							if (info.type == SECTYPE_DIR) {
+								clr = GOLD;
+							} else {
+								clr = ANA_GetFileColour(dir, info,
+									(hov_info.type != SECTYPE_DIR && hov_dir_index == info.dir_index),
+									(curr_sector.type != SECTYPE_DIR && curr_sector.dir_index == info.dir_index)
+								);
+							}
+						} break;
 					}
 
 					DSK_Sector_Draw(dir, pos, dm, clr);
