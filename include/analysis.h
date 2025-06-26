@@ -71,8 +71,9 @@ typedef struct {
 typedef struct {
 	DSK_Directory dir;
 	ANA_SectorInfo sectors[MAX_ANALYSIS_ENTRIES];
-	int count_free;
+	int count_in_use;
 	int count_healthy;
+	int count_bad;
 } ANA_DiskInfo;
 
 //

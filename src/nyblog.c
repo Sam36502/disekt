@@ -78,6 +78,10 @@ int NYB_ParseDataLine(char *line, uint8_t *offset, uint8_t data[16]) {
 
 int NYB_ParseLogBlock(FILE *f_log, NYB_DataBlock *block) {
 	if (f_log == NULL || block == NULL) return 1;
+	block->block_status = 0x00;
+	block->track_num = 0x00;
+	block->sector_index = 0xFF;
+	block->err_code = 0x00;
 	block->parse_error = 0x00;
 
 	char line[128];
@@ -240,11 +244,11 @@ int NYB_WriteToDiskImage(char *filename, NYB_DataBlock *block_buf, int buf_len) 
 	 
 	if (f_disk == NULL) return 2;
 
-	if (g_verbose_log) printf("\nWriting parsed data to '%s'...\n", filename);
 	for (int i=0; i<buf_len; i++) {
 		NYB_DataBlock block = block_buf[i];
 		uint16_t chk = DSK_Checksum(block.data);
 
+		DSK_Position pos = { block.track_num, block.sector_index };
 		if (g_verbose_log) {
 			printf("  [% 3i/% 3i] ", block.track_num, block.sector_index);
 			if (block.err_code != 0) {
@@ -255,12 +259,19 @@ int NYB_WriteToDiskImage(char *filename, NYB_DataBlock *block_buf, int buf_len) 
 				printf("Skipping due to checksum mismatch (0x%04X =/= 0x%04X)\n", block.checksum, chk);
 				continue;
 			}
-
-			printf("Written to disk!\n");
+			if (DSK_IsPositionValid(pos)) {
+				printf("Skipping due to invalid block position\n");
+				continue;
+			}
 		}
 
-		DSK_File_SeekPosition(f_disk, (DSK_Position){ block.track_num, block.sector_index });
+		if (block.err_code != 0) continue;
+		if (block.checksum != chk) continue;
+		if (DSK_IsPositionValid(pos)) continue;
+		DSK_File_SeekPosition(f_disk, pos);
 		fwrite(block.data, sizeof(uint8_t), BLOCK_SIZE, f_disk);
+
+		if (g_verbose_log) printf("Written to disk!\n");
 	}
 
 	// Seek to end of disk to create blank sectors

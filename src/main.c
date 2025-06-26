@@ -355,22 +355,28 @@ int main(int argc, char *argv[]) {
 
 			// Draw full disk usage & analysis stats
 			const float kb_total = (float) BLOCK_SIZE * MAX_ANALYSIS_ENTRIES / 1024.0f;
-			const float kb_in_use = (float) BLOCK_SIZE * (MAX_ANALYSIS_ENTRIES - analysis.count_free) / 1024.0f;
-			const float pc_in_use = kb_in_use / kb_total * 100.0f;
-			draw_text(TextFormat("%4.2f KiB / %4.2f KiB (%2.0f%%) in use", kb_in_use, kb_total, pc_in_use),
+			const float kb_in_use = (float) BLOCK_SIZE * analysis.count_in_use / 1024.0f;
+			const float pc_in_use = (float) analysis.count_in_use / MAX_ANALYSIS_ENTRIES;
+			draw_text(TextFormat("%4.2f KiB / %4.2f KiB (%2.0f%%) in use", kb_in_use, kb_total, pc_in_use * 100.0f),
 				info_x - 10, 10, 1, CLR_ACCENT
 			);
-			const float pc_healthy = (float) analysis.count_healthy / MAX_ANALYSIS_ENTRIES * 100.0f;
+			const float pc_healthy = (float) analysis.count_healthy / analysis.count_in_use;
+			const float pc_bad = (float) analysis.count_bad / (float) analysis.count_in_use;
+			const int used_width = 200.0f * pc_in_use;
 			DrawRectangle(
-				info_x - 10 - 200, 10 + 30, 200, 20, GRAY
+				info_x - 10 - 200, 10 + 30, 200, 20, BLACK
 			);
 			DrawRectangle(
-				info_x - 10 - 200, 10 + 30, pc_in_use * 2.0f, 20, RED
+				info_x - 10 - 200, 10 + 30, used_width, 20, GRAY
 			);
 			DrawRectangle(
-				info_x - 10 - 200, 10 + 30, pc_healthy * 2.0f, 20, GREEN
+				info_x - 10 - 200, 10 + 30, used_width * pc_healthy, 20, GREEN
 			);
-			draw_text(TextFormat("%2.2f%% healthy", pc_healthy),
+			DrawRectangle(
+				info_x - 10 - 200 + (200.0f * pc_in_use) * pc_healthy, 10 + 30,
+				used_width * pc_bad, 20, RED
+			);
+			draw_text(TextFormat("%2.0f%% healthy", pc_healthy * 100.0f),
 				info_x - 10, 10 + 60, 1, LIME
 			);
 

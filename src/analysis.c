@@ -258,14 +258,25 @@ int ANA_GatherStats(ANA_DiskInfo *analysis) {
 	for (int i=0; i<MAX_ANALYSIS_ENTRIES; i++) {
 		ANA_SectorInfo entry = analysis->sectors[i];
 
-		if (entry.is_free) analysis->count_free++;
+		if (entry.is_free) continue;
+
+		analysis->count_in_use++;
 
 		if (entry.status == SECSTAT_GOOD
 			|| entry.status == SECSTAT_PRESENT
 			|| entry.status == SECSTAT_CONFIRMED
-			|| entry.status == SECSTAT_EMPTY
 		) {
 			analysis->count_healthy++;
+			continue;
+		}
+
+		if (entry.status == SECSTAT_BAD
+			|| entry.status == SECSTAT_MISSING
+			|| entry.status == SECSTAT_CORRUPTED
+			|| entry.status == SECSTAT_INVALID
+		) {
+			analysis->count_bad++;
+			continue;
 		}
 	}
 

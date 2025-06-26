@@ -231,17 +231,19 @@ char *DSK_GetDescription(DSK_Directory dir) {
 	buffer[0] = '\0';
 
 	int bi = 0;
-	int last_space = 0;
+	int last_space = -1;
 	for (int i=0; i<DIR_HEADER_SIZE && dir.header[i] != '\0'; i++) {
 		char c = dir.header[i];
 		if ((uint8_t) c == 0xA0) c = 0x00;
-		if (c == ' ') {
+		if (isspace(c)) {
 			if (bi == 0) continue;
 			last_space = bi;
 		}
+		last_space = -1;
 		buffer[bi++] = c;
 	}
 	if (last_space > 0) buffer[last_space] = '\0';
+	else buffer[bi] = '\0';
 
 	return buffer;
 }
@@ -255,7 +257,8 @@ char *DSK_GetName(DSK_Directory dir) {
 	int last_space = 0;
 	while (i < 17 && full[i] != '\0') {
 		buffer[i] = full[i];
-		if (full[i] == ' ') last_space = i;
+		if (isspace(full[i])) last_space = i;
+		else last_space = 0;
 		i++;
 	}
 	if (last_space == 0) last_space = i;
