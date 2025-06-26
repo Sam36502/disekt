@@ -90,12 +90,12 @@ int ANA_GetInfo(ANA_DiskInfo analysis, DSK_Position pos, ANA_SectorInfo *entry);
 //	Gets a constant char pointer to the name of a sector status
 //	
 //	*Deprecated*
-const char *REC_GetStatusName(ANA_Status status);
+const char *ANA_GetStatusName(ANA_Status status);
 
 //	Get a colour for a sector based on its state
 //
 //	*Deprecated*
-Color REC_GetStatusColour(ANA_Status status);
+Color ANA_GetStatusColour(ANA_Status status);
 
 //	Get a colour for a sector based on which file it belongs to
 //

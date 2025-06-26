@@ -261,7 +261,7 @@ int ANA_GetInfo(ANA_DiskInfo analysis, DSK_Position pos, ANA_SectorInfo *entry) 
 	return 0;
 }
 
-const char *REC_GetStatusName(ANA_Status status) {
+const char *ANA_GetStatusName(ANA_Status status) {
 	switch (status) {
 		case SECSTAT_EMPTY: return "Empty";
 		case SECSTAT_UNEXPECTED: return "Unexpected Data";
@@ -279,7 +279,7 @@ const char *REC_GetStatusName(ANA_Status status) {
 	return "";
 }
 
-Color REC_GetStatusColour(ANA_Status status) {
+Color ANA_GetStatusColour(ANA_Status status) {
 	switch (status) {
 		case SECSTAT_EMPTY: return LIGHTGRAY;
 		case SECSTAT_UNEXPECTED: return SKYBLUE;

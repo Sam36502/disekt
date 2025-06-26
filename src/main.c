@@ -300,7 +300,7 @@ int main(int argc, char *argv[]) {
 					Color clr = GRAY;
 					switch (view_mode) {
 						case VIEW_INVALID: view_mode = VIEW_SECSTAT; // Fall-through
-						case VIEW_SECSTAT: clr = REC_GetStatusColour(info.status); break;
+						case VIEW_SECSTAT: clr = ANA_GetStatusColour(info.status); break;
 
 						case VIEW_BAM: {
 							if (!info.is_free) {
@@ -465,9 +465,9 @@ int main(int argc, char *argv[]) {
 			draw_text("Sector Status:",
 				info_tab_x - 5, 10 + (line_num * 20), 1, BLACK
 			);
-			draw_text(REC_GetStatusName(curr_sector.status),
+			draw_text(ANA_GetStatusName(curr_sector.status),
 				info_tab_x + 5, 10 + (line_num++ * 20), -1,
-				REC_GetStatusColour(curr_sector.status)
+				ANA_GetStatusColour(curr_sector.status)
 			);
 
 			// Draw specific sector info
@@ -507,12 +507,17 @@ int main(int argc, char *argv[]) {
 
 				case SECTYPE_DIR: {
 					draw_text("Directory Files:",
-						info_x + 10, 10 + (line_num++ * 20), -1,
+						info_x + 10, 10 + (line_num * 20), -1,
 						BLACK
+					);
+					draw_text("File Health:",
+						SCREEN_WIDTH - 10, 10 + (line_num * 20), 1,
+						GRAY
 					);
 					line_num++;
 
 					for (int i=0; i<8; i++) {
+						line_num++;
 						DSK_DirEntry entry = dir.entries[ curr_sector.dir_index + i ];
 						Color clr = GRAY;
 						Rectangle rect = {
@@ -520,20 +525,50 @@ int main(int argc, char *argv[]) {
 							50 + MeasureText(entry.filename, 20), 20,
 						};
 
-						if (CheckCollisionPointRec(GetMousePosition(), rect)) clr = CLR_ACCENT;
-						if (!DSK_IsPositionValid(entry.head_pos)
-							|| DSK_PositionsEqual(entry.head_pos, DSK_POSITION_BAM)
-						) {
+						bool is_valid = DSK_IsPositionValid(entry.head_pos) && !DSK_PositionsEqual(entry.head_pos, DSK_POSITION_BAM);
+						if (is_valid) {
+							if (CheckCollisionPointRec(GetMousePosition(), rect)) clr = CLR_ACCENT;
+						} else {
 							clr = LIGHTGRAY;
 						}
 
+						// Draw File name
 						DrawPoly((Vector2){ info_x + 40, 19 + (line_num * 20) },
 							4, 5, 0, clr
 						);
 						draw_text(entry.filename,
-							info_x + 60, 10 + (line_num++ * 20), -1,
+							info_x + 60, 10 + (line_num * 20), -1,
 							clr
 						);
+						if (!is_valid) continue;
+
+						// Visualise how many sectors per file are present and healthy
+						Rectangle block_rect = {
+							SCREEN_WIDTH - 10 - 220, 10 + (line_num * 20) + 4,
+							220, 12,
+						};
+						float bwidth = (float) block_rect.width / entry.block_count;
+						if (bwidth < 1.0f) bwidth = 1.0f;
+
+						ANA_SectorInfo binfo = analysis.sectors[DSK_PositionToIndex(entry.head_pos)];
+						int good_blocks = 0;
+						for (int b=0; b<entry.block_count; b++) {
+							DrawRectangle(
+								block_rect.x + (b * bwidth), block_rect.y,
+								ceilf(bwidth), 12, ANA_GetStatusColour(binfo.status)
+							);
+
+							if (binfo.status == SECSTAT_GOOD
+								|| binfo.status == SECSTAT_PRESENT
+								|| binfo.status == SECSTAT_CONFIRMED
+							) good_blocks++;
+							if (binfo.next_block_index != -1) binfo = analysis.sectors[binfo.next_block_index];
+						}
+						draw_text(TextFormat("%i/%i", good_blocks, entry.block_count),
+							block_rect.x - 10, 10 + (line_num * 20), 1,
+							BLACK
+						);
+
 					}
 				} break;
 
