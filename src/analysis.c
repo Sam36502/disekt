@@ -161,7 +161,7 @@ int ANA_AnalyseDisk(FILE *f_disk, FILE *f_meta, DSK_Directory dir, ANA_DiskInfo 
 			DSK_File_SeekPosition(f_disk, pos);
 			int n = fread(&pos, sizeof(DSK_Position), 1, f_disk);
 
-			if (curr.status == SECSTAT_UNKNOWN || curr.status == SECSTAT_PRESENT) {
+			if (curr.status == SECSTAT_UNKNOWN || curr.status == SECSTAT_PRESENT || curr.status == SECSTAT_MISSING) {
 				if (n != 1) {
 					analysis->sectors[index].status = SECSTAT_BAD;
 					break;

@@ -200,14 +200,18 @@ int main(int argc, char *argv[]) {
 			}
 
 			if (curr_sector.type == SECTYPE_DIR) {
-				for (int i=0; i<dir.num_entries && i < 8; i++) {
+				for (int i=0; i<8; i++) {
+					DSK_DirEntry entry = dir.entries[ curr_sector.dir_index + i ];
 					Rectangle rect = {
 						info_x + 30, 10 + ((15+i) * 20),
-						50 + MeasureText(dir.entries[i].filename, 20), 20,
+						50 + MeasureText(entry.filename, 20), 20,
 					};
-					//DrawRectangleRec(rect, (Color){ 0xFF, 0x80, 0x40, 0x80 });
-					if (CheckCollisionPointRec(GetMousePosition(), rect)) {
-						curr_pos = dir.entries[i].head_pos;
+
+					if (DSK_IsPositionValid(entry.head_pos)
+						&& !DSK_PositionsEqual(entry.head_pos, DSK_POSITION_BAM)
+						&& CheckCollisionPointRec(GetMousePosition(), rect)
+					) {
+						curr_pos = entry.head_pos;
 						sector_changed = true;
 					}
 				}
@@ -220,7 +224,7 @@ int main(int argc, char *argv[]) {
 					sector_changed = true;
 				}
 			}
-			//
+
 			// Next Button
 			if (curr_sector.next_block_index >= 0) {
 				if (CheckCollisionPointRec(GetMousePosition(), btnrect_next)) {
@@ -508,19 +512,25 @@ int main(int argc, char *argv[]) {
 					);
 					line_num++;
 
-					for (int i=0; i<dir.num_entries && i<8; i++) {
+					for (int i=0; i<8; i++) {
+						DSK_DirEntry entry = dir.entries[ curr_sector.dir_index + i ];
 						Color clr = GRAY;
 						Rectangle rect = {
 							info_x + 30, 10 + (line_num * 20),
-							50 + MeasureText(dir.entries[i].filename, 20), 20,
+							50 + MeasureText(entry.filename, 20), 20,
 						};
 
 						if (CheckCollisionPointRec(GetMousePosition(), rect)) clr = CLR_ACCENT;
+						if (!DSK_IsPositionValid(entry.head_pos)
+							|| DSK_PositionsEqual(entry.head_pos, DSK_POSITION_BAM)
+						) {
+							clr = LIGHTGRAY;
+						}
 
 						DrawPoly((Vector2){ info_x + 40, 19 + (line_num * 20) },
 							4, 5, 0, clr
 						);
-						draw_text(dir.entries[i].filename,
+						draw_text(entry.filename,
 							info_x + 60, 10 + (line_num++ * 20), -1,
 							clr
 						);
@@ -545,21 +555,6 @@ int main(int argc, char *argv[]) {
 						info_x + 20, 10 + (line_num++ * 20), -1,
 						BLACK
 					);
-
-					//line_num = 20;
-					//if (curr_sector.file_index < curr_sector.dir_entry.block_count - 1) {
-					//	Rectangle rect = {
-					//		info_x + 10, 10 + (20 * 20),
-					//		40 + MeasureText("Next Block", 20), 40,
-					//	};
-					//	Color clr = GRAY;
-					//	if (CheckCollisionPointRec(GetMousePosition(), rect)) clr = CLR_ACCENT;
-					//	draw_text(TextFormat("Next Block"),
-					//		info_x + 30, 20 + (line_num++ * 20), -1, clr
-					//	);
-					//	DrawRectangleLinesEx(rect, 2, clr);
-					//}
-
 				} break;
 
 				default: break;
