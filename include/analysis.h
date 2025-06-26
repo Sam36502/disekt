@@ -33,6 +33,7 @@ typedef enum {
 	SECSTAT_GOOD = 0x41,
 	SECSTAT_UNKNOWN = 0xFF,
 } ANA_Status;
+#define NUM_SECSTATS 10
 
 //	The full analysis of all collected information about a single disk sector
 typedef struct {
@@ -70,6 +71,8 @@ typedef struct {
 typedef struct {
 	DSK_Directory dir;
 	ANA_SectorInfo sectors[MAX_ANALYSIS_ENTRIES];
+	int count_free;
+	int count_healthy;
 } ANA_DiskInfo;
 
 //
@@ -81,6 +84,10 @@ typedef struct {
 //
 //	Tries to find as much information about every sector as it can
 int ANA_AnalyseDisk(FILE *f_disk, FILE *f_meta, DSK_Directory dir, ANA_DiskInfo *analysis);
+
+//	Go through all sectors and count statistics for each sector status
+//
+int ANA_GatherStats(ANA_DiskInfo *analysis);
 
 //	Get the full analysis entry for a given sector
 //

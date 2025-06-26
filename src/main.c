@@ -28,10 +28,10 @@
 
 // Function Declarations
 void draw_text(const char *text, int x, int y, int align, Color clr);
+void draw_stat(int x, int y, int n, int max, Color clr);
 void parse_args(int argc, char *argv[], char **log_filename, char **recon_filename, char **disk_filename);
 void usage();
 void version();
-
 
 int main(int argc, char *argv[]) {
 
@@ -145,6 +145,11 @@ int main(int argc, char *argv[]) {
 	err = ANA_AnalyseDisk(f_disk, f_meta, dir, &analysis);
 	if (err != 0) {
 		printf("Failed to analyse disk: Err-code %i\n", err);
+		return EXIT_FAILURE;
+	}
+	err = ANA_GatherStats(&analysis);
+	if (err != 0) {
+		printf("Failed to gather disk stats: Err-code %i\n", err);
 		return EXIT_FAILURE;
 	}
 	if (f_meta != NULL) fclose(f_meta);
@@ -345,17 +350,38 @@ int main(int argc, char *argv[]) {
 			// Draw Title
 			draw_text(name, 10, 10, -1, CLR_ACCENT);
 			draw_text(TextFormat("\"%s\"", disk_filename),
-				10, 30, -1, BLACK
+				10, 10 + 30, -1, BLACK
+			);
+
+			// Draw full disk usage & analysis stats
+			const float kb_total = (float) BLOCK_SIZE * MAX_ANALYSIS_ENTRIES / 1024.0f;
+			const float kb_in_use = (float) BLOCK_SIZE * (MAX_ANALYSIS_ENTRIES - analysis.count_free) / 1024.0f;
+			const float pc_in_use = kb_in_use / kb_total * 100.0f;
+			draw_text(TextFormat("%4.2f KiB / %4.2f KiB (%2.0f%%) in use", kb_in_use, kb_total, pc_in_use),
+				info_x - 10, 10, 1, CLR_ACCENT
+			);
+			const float pc_healthy = (float) analysis.count_healthy / MAX_ANALYSIS_ENTRIES * 100.0f;
+			DrawRectangle(
+				info_x - 10 - 200, 10 + 30, 200, 20, GRAY
+			);
+			DrawRectangle(
+				info_x - 10 - 200, 10 + 30, pc_in_use * 2.0f, 20, RED
+			);
+			DrawRectangle(
+				info_x - 10 - 200, 10 + 30, pc_healthy * 2.0f, 20, GREEN
+			);
+			draw_text(TextFormat("%2.2f%% healthy", pc_healthy),
+				info_x - 10, 10 + 60, 1, LIME
 			);
 
 			// Draw Currently selected sector pos & hovered sector pos
 			if (DSK_IsPositionValid(hov)) {
 				draw_text(TextFormat("[% 3i/% 3i]", hov.track, hov.sector),
-					10, SCREEN_HEIGHT - 50, -1, BLACK
+					10, SCREEN_HEIGHT - 30 - 30, -1, BLACK
 				);
 			} else {
 				draw_text("[---/---]",
-					10, SCREEN_HEIGHT - 50, -1, LIGHTGRAY
+					10, SCREEN_HEIGHT - 30 - 30, -1, LIGHTGRAY
 				);
 			}
 			draw_text(TextFormat("[% 3i/% 3i]", curr_pos.track, curr_pos.sector),
@@ -364,7 +390,7 @@ int main(int argc, char *argv[]) {
 
 			// Draw current view mode name
 			draw_text("View Mode [F2]",
-				info_x - 10, SCREEN_HEIGHT - 50, 1, BLACK
+				info_x - 10, SCREEN_HEIGHT - 30 - 30, 1, BLACK
 			);
 			char *mode_name = "";
 			switch (view_mode) {
@@ -379,7 +405,6 @@ int main(int argc, char *argv[]) {
 				info_x - 10, SCREEN_HEIGHT - 30, 1, CLR_ACCENT
 			);
 
-			// TODO: Draw full disk usage & analysis stats in top-right corner
 
 
 			// Draw Sector Info

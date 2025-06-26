@@ -188,6 +188,7 @@ int ANA_AnalyseDisk(FILE *f_disk, FILE *f_meta, DSK_Directory dir, ANA_DiskInfo 
 	}
 
 	// Mark blocks with a known blank pattern as "empty" (not "unexpected")
+	// TODO: Refactor into separate function
 	uint8_t *blank_patterns[64];
 	int blank_matches[64];
 	int blank_pattern_count = 0;
@@ -246,6 +247,26 @@ int ANA_AnalyseDisk(FILE *f_disk, FILE *f_meta, DSK_Directory dir, ANA_DiskInfo 
 		ANA_SectorInfo curr = analysis->sectors[i];
 		if (!curr.has_transfer_info) continue;
 		if (curr.status == SECSTAT_GOOD && curr.checksum_match) analysis->sectors[i].status = SECSTAT_CONFIRMED;
+	}
+
+	return 0;
+}
+
+int ANA_GatherStats(ANA_DiskInfo *analysis) {
+	if (analysis == NULL) return 1;
+
+	for (int i=0; i<MAX_ANALYSIS_ENTRIES; i++) {
+		ANA_SectorInfo entry = analysis->sectors[i];
+
+		if (entry.is_free) analysis->count_free++;
+
+		if (entry.status == SECSTAT_GOOD
+			|| entry.status == SECSTAT_PRESENT
+			|| entry.status == SECSTAT_CONFIRMED
+			|| entry.status == SECSTAT_EMPTY
+		) {
+			analysis->count_healthy++;
+		}
 	}
 
 	return 0;
