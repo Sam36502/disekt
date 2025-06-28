@@ -12,7 +12,7 @@
 
 
 #define VERSION "0.4.2"
-#define FRAMERATE 60		// FPS
+#define FRAMERATE 30		// FPS
 #define SCREEN_WIDTH 1600
 #define SCREEN_HEIGHT 1000
 
@@ -30,6 +30,7 @@
 void draw_text(const char *text, int x, int y, int align, Color clr);
 void draw_stat(int x, int y, int n, int max, Color clr);
 void parse_args(int argc, char *argv[], char **log_filename, char **recon_filename, char **disk_filename);
+bool is_key_held(int keycode);
 void usage();
 void version();
 
@@ -190,7 +191,6 @@ int main(int argc, char *argv[]) {
 		VIEW_FILES, 
 		VIEW_INVALID,
 	} view_mode = VIEW_SECSTAT;
-	bool redraw = true;
 	bool hex_mode = false;
 	while (!WindowShouldClose()) {
 
@@ -240,24 +240,22 @@ int main(int argc, char *argv[]) {
 
 		}
 
+		// Arrow navigation
+		if (is_key_held(KEY_ARROW_UP) && curr_pos.track < 35) { curr_pos.track++; sector_changed = true; }
+		if (is_key_held(KEY_ARROW_DOWN) && curr_pos.track > 1) { curr_pos.track--; sector_changed = true; }
+		if (is_key_held(KEY_ARROW_LEFT)) { curr_pos.sector--; sector_changed = true; }
+		if (is_key_held(KEY_ARROW_RIGHT)) { curr_pos.sector++; sector_changed = true; }
+
+		int secs = DSK_Track_GetSectorCount(curr_pos.track);
+		if (curr_pos.sector > 0x80) curr_pos.sector = secs - 1;
+		if (curr_pos.sector >= secs) curr_pos.sector = 0;
 
 		int key = GetKeyPressed();
-		if (true || key != 0) {
+		if (key != 0) {
 			switch (key) {
 				case KEY_TOGGLE_HEX_MODE: { hex_mode = !hex_mode; } break;
 				case KEY_TOGGLE_VIEW_MODE: { view_mode++; if (view_mode >= VIEW_INVALID) view_mode = 0; } break;
-				case KEY_ARROW_UP: { if (curr_pos.track < 35) curr_pos.track++; sector_changed = true; } break;
-				case KEY_ARROW_DOWN: { if (curr_pos.track > 1) curr_pos.track--; sector_changed = true; } break;
-				case KEY_ARROW_LEFT: { curr_pos.sector--; sector_changed = true; } break;
-				case KEY_ARROW_RIGHT: { curr_pos.sector++; sector_changed = true; } break;
 			}
-			int secs = DSK_Track_GetSectorCount(curr_pos.track);
-			if (curr_pos.sector > 0x80) curr_pos.sector = secs - 1;
-			if (curr_pos.sector >= secs) curr_pos.sector = 0;
-
-			redraw = true;
-
-			redraw |= DEBUG_HandleEvents(key);
 		}
 
 		if (sector_changed) {
@@ -270,382 +268,324 @@ int main(int argc, char *argv[]) {
 			}
 		}
 
-		if (redraw) {
-			BeginDrawing();
+		////	Drawing
 
-			// Clear Background
-			ClearBackground(RAYWHITE);
+		BeginDrawing();
 
-			int hov_dir_index = -1;
-			ANA_SectorInfo hov_info;
-			err = ANA_GetInfo(analysis, hov, &hov_info);
-			if (err == 0) hov_dir_index = hov_info.dir_index;
+		// Clear Background
+		ClearBackground(RAYWHITE);
 
-			// Draw Disk-Sectors
-			for (int t=MIN_TRACKS; t<=MAX_TRACKS; t++) {
-				int sc = DSK_Track_GetSectorCount(t);
-				for (int s=0; s<sc; s++) {
-					DSK_Position pos = { t, s };
-					DSK_DrawMode dm = DSK_DRAW_NORMAL;
+		int hov_dir_index = -1;
+		ANA_SectorInfo hov_info;
+		err = ANA_GetInfo(analysis, hov, &hov_info);
+		if (err == 0) hov_dir_index = hov_info.dir_index;
 
-					ANA_SectorInfo info;
-					err = ANA_GetInfo(analysis, pos, &info);
-					if (err != 0) {
-						DSK_Sector_Draw(dir, pos, dm, MAGENTA);
-						continue;
-					}
+		// Draw Disk-Sectors
+		for (int t=MIN_TRACKS; t<=MAX_TRACKS; t++) {
+			int sc = DSK_Track_GetSectorCount(t);
+			for (int s=0; s<sc; s++) {
+				DSK_Position pos = { t, s };
+				DSK_DrawMode dm = DSK_DRAW_NORMAL;
 
-					if (DSK_PositionsEqual(pos, hov)) {
-						dm = DSK_DRAW_HIGHLIGHT;
-					}
-					if (DSK_PositionsEqual(pos, curr_pos)) {
-						dm = DSK_DRAW_SELECTED;
-					}
+				ANA_SectorInfo info;
+				err = ANA_GetInfo(analysis, pos, &info);
+				if (err != 0) {
+					DSK_Sector_Draw(dir, pos, dm, MAGENTA);
+					continue;
+				}
 
-					Color clr = GRAY;
-					switch (view_mode) {
-						case VIEW_INVALID: view_mode = VIEW_SECSTAT; // Fall-through
-						case VIEW_SECSTAT: clr = ANA_GetStatusColour(info.status); break;
+				if (DSK_PositionsEqual(pos, hov)) {
+					dm = DSK_DRAW_HIGHLIGHT;
+				}
+				if (DSK_PositionsEqual(pos, curr_pos)) {
+					dm = DSK_DRAW_SELECTED;
+				}
 
-						case VIEW_BAM: {
-							if (!info.is_free) {
-								if (info.has_data && !info.is_blank) clr = GREEN;
+				Color clr = GRAY;
+				switch (view_mode) {
+					case VIEW_INVALID: view_mode = VIEW_SECSTAT; // Fall-through
+					case VIEW_SECSTAT: clr = ANA_GetStatusColour(info.status); break;
+
+					case VIEW_BAM: {
+						if (!info.is_free) {
+							if (info.has_data && !info.is_blank) clr = GREEN;
+							else clr = RED;
+						} else {
+							if (!info.has_data || info.is_blank) clr = LIGHTGRAY;
+							else clr = BLACK;
+						}
+					} break;
+
+					case VIEW_TRANSFER: {
+						if (info.has_transfer_info && info.has_data) {
+							if (info.parse_err == 0x00) {
+								if (info.disk_err == 0x80 && info.checksum_match) clr = GREEN;
 								else clr = RED;
 							} else {
-								if (!info.has_data || info.is_blank) clr = LIGHTGRAY;
-								else clr = BLACK;
+								clr = RED;
 							}
-						} break;
-
-						case VIEW_TRANSFER: {
-							if (info.has_transfer_info && info.has_data) {
-								if (info.parse_err == 0x00) {
-									if (info.disk_err == 0x80 && info.checksum_match) clr = GREEN;
-									else clr = RED;
-								} else {
-									clr = RED;
-								}
-							} else {
-								clr = LIGHTGRAY;
-							}
-						} break;
-
-						case VIEW_SECTYPE: clr = DSK_Sector_GetTypeColour(info.type); break;
-						case VIEW_FILES: {
-							if (info.type == SECTYPE_DIR) {
-								clr = GOLD;
-							} else {
-								clr = ANA_GetFileColour(dir, info,
-									(hov_info.type != SECTYPE_DIR && hov_dir_index == info.dir_index),
-									(curr_sector.type != SECTYPE_DIR && curr_sector.dir_index == info.dir_index)
-								);
-							}
-						} break;
-					}
-
-					DSK_Sector_Draw(dir, pos, dm, clr);
-				}
-			}
-
-			// Draw Title
-			draw_text(name, 10, 10, -1, CLR_ACCENT);
-			draw_text(TextFormat("\"%s\"", disk_filename),
-				10, 10 + 30, -1, BLACK
-			);
-
-			// Draw full disk usage & analysis stats
-			const float kb_total = (float) BLOCK_SIZE * MAX_ANALYSIS_ENTRIES / 1024.0f;
-			const float kb_in_use = (float) BLOCK_SIZE * analysis.count_in_use / 1024.0f;
-			const float pc_in_use = (float) analysis.count_in_use / MAX_ANALYSIS_ENTRIES;
-			draw_text(TextFormat("%4.2f KiB / %4.2f KiB (%2.0f%%) in use", kb_in_use, kb_total, pc_in_use * 100.0f),
-				info_x - 10, 10, 1, CLR_ACCENT
-			);
-			const float pc_healthy = (float) analysis.count_healthy / analysis.count_in_use;
-			const float pc_bad = (float) analysis.count_bad / (float) analysis.count_in_use;
-			const int used_width = 200.0f * pc_in_use;
-			DrawRectangle(
-				info_x - 10 - 200, 10 + 30, 200, 20, BLACK
-			);
-			DrawRectangle(
-				info_x - 10 - 200, 10 + 30, used_width, 20, GRAY
-			);
-			DrawRectangle(
-				info_x - 10 - 200, 10 + 30, used_width * pc_healthy, 20, GREEN
-			);
-			DrawRectangle(
-				info_x - 10 - 200 + (200.0f * pc_in_use) * pc_healthy, 10 + 30,
-				used_width * pc_bad, 20, RED
-			);
-			draw_text(TextFormat("%2.0f%% healthy", pc_healthy * 100.0f),
-				info_x - 10, 10 + 60, 1, LIME
-			);
-
-			// Draw Currently selected sector pos & hovered sector pos
-			if (DSK_IsPositionValid(hov)) {
-				draw_text(TextFormat("[% 3i/% 3i]", hov.track, hov.sector),
-					10, SCREEN_HEIGHT - 30 - 30, -1, BLACK
-				);
-			} else {
-				draw_text("[---/---]",
-					10, SCREEN_HEIGHT - 30 - 30, -1, LIGHTGRAY
-				);
-			}
-			draw_text(TextFormat("[% 3i/% 3i]", curr_pos.track, curr_pos.sector),
-				10, SCREEN_HEIGHT - 30, -1, CLR_ACCENT
-			);
-
-			// Draw current view mode name
-			draw_text("View Mode [F2]",
-				info_x - 10, SCREEN_HEIGHT - 30 - 30, 1, BLACK
-			);
-			char *mode_name = "";
-			switch (view_mode) {
-				case VIEW_INVALID: view_mode = VIEW_SECSTAT; // Fall-through
-				case VIEW_SECSTAT: mode_name = "Sector Status"; break;
-				case VIEW_BAM: mode_name = "Missing Sectors"; break;
-				case VIEW_TRANSFER: mode_name = "Transfer Errors"; break;
-				case VIEW_SECTYPE: mode_name = "Sector Type"; break;
-				case VIEW_FILES: mode_name = "File Blocks"; break;
-			}
-			draw_text(mode_name,
-				info_x - 10, SCREEN_HEIGHT - 30, 1, CLR_ACCENT
-			);
-
-
-
-			// Draw Sector Info
-
-			DrawLineEx(
-				(Vector2){ info_x, 10 },
-				(Vector2){ info_x, SCREEN_HEIGHT - 10 },
-				2.0f, BLACK
-			);
-
-			int line_num = 0;
-			draw_text("Current Sector Info:",
-					info_x + 10, 10 + (line_num++ * 20), -1, BLACK
-			);
-
-			DrawLineEx(
-				(Vector2){ info_x + 10, 18 + (line_num * 20) },
-				(Vector2){ SCREEN_WIDTH - 10, 18 + (line_num * 20) },
-				2.0f, BLACK
-			); line_num++;
-
-			draw_text("Sector Type:",
-					info_tab_x - 5, 10 + (line_num * 20), 1, BLACK
-			);
-			draw_text(DSK_Sector_GetTypeName(curr_sector.type),
-					info_tab_x + 5, 10 + (line_num++ * 20), -1, DSK_Sector_GetTypeColour(curr_sector.type)
-			);
-
-			draw_text("Checksum:",
-					info_tab_x - 5, 10 + (line_num * 20), 1, BLACK
-			);
-			if (curr_sector.has_transfer_info) {
-				draw_text(TextFormat("0x%04X - 0x%04X [%s]",
-						curr_checksum, curr_sector.checksum,
-						(curr_checksum == curr_sector.checksum) ? "MATCH":"BREAK"
-					), info_tab_x + 5, 10 + (line_num++ * 20), -1,
-					(curr_checksum == curr_sector.checksum) ? GREEN:RED
-				);
-			} else if (curr_sector.has_data) {
-				draw_text(TextFormat("0x%04X", curr_checksum),
-					info_tab_x + 5, 10 + (line_num++ * 20), -1,
-					GRAY
-				);
-			} else {
-				draw_text("-",
-					info_tab_x + 5, 10 + (line_num++ * 20), -1,
-					GRAY
-				);
-			}
-			line_num++;
-
-			if (curr_sector.has_transfer_info) {
-				draw_text("Disk Error:",
-						info_tab_x - 5, 10 + (line_num * 20), 1, BLACK
-				);
-
-				uint8_t e = curr_sector.disk_err & ~0x80;
-				draw_text(TextFormat("0x%02X (%i)", e, e),
-					info_tab_x + 5, 10 + (line_num++ * 20), -1,
-					ANA_GetDiskErrorColour(curr_sector.disk_err)
-				);
-				draw_text(ANA_GetDiskErrorName(curr_sector.disk_err),
-					info_tab_x + 5, 10 + (line_num++ * 20), -1,
-					ANA_GetDiskErrorColour(curr_sector.disk_err)
-				);
-				line_num++;
-
-				e = curr_sector.parse_err;
-				draw_text("Parse Error:",
-						info_tab_x - 5, 10 + (line_num * 20), 1, BLACK
-				);
-				draw_text(TextFormat("0x%02X (%i)", e, e),
-					info_tab_x + 5, 10 + (line_num++ * 20), -1,
-					ANA_GetParseErrorColour(e)
-				);
-				draw_text(ANA_GetParseErrorName(e),
-					info_tab_x + 5, 10 + (line_num++ * 20), -1,
-					ANA_GetParseErrorColour(e)
-				);
-				line_num++;
-			}
-
-			draw_text("Sector Status:",
-				info_tab_x - 5, 10 + (line_num * 20), 1, BLACK
-			);
-			draw_text(ANA_GetStatusName(curr_sector.status),
-				info_tab_x + 5, 10 + (line_num++ * 20), -1,
-				ANA_GetStatusColour(curr_sector.status)
-			);
-
-			// Draw specific sector info
-			line_num = 12;
-			DrawLineEx(
-				(Vector2){ info_x + 10, 19 + (line_num * 20) },
-				(Vector2){ SCREEN_WIDTH - 10, 19 + (line_num * 20) },
-				2.0f, BLACK
-			); line_num++;
-			switch (curr_sector.type) {
-
-				case SECTYPE_BAM: {
-					draw_text("Full Header Text:",
-						info_x + 10, 10 + (line_num++ * 20), -1,
-						BLACK
-					);
-					line_num++;
-
-					char *desc = DSK_GetDescription(dir);
-					int desclen = strlen(desc);
-					char *str = desc;
-					int prev = 0;
-					for (int i=0; i<desclen; i++) {
-						if (i < desclen-1 && i-prev < 40 && desc[i] != '\n') continue;
-						if (i >= desclen-1 || desc[i] == '\n') i++;
-						int len = i - prev;
-
-						draw_text(TextFormat("%.*s", len, str),
-							info_x + 20, 10 + (line_num++ * 20), -1,
-							GRAY
-						);
-
-						prev = i;
-						str = desc + i;
-					}
-				} break;
-
-				case SECTYPE_DIR: {
-					draw_text("Directory Files:",
-						info_x + 10, 10 + (line_num * 20), -1,
-						BLACK
-					);
-					draw_text("File Health:",
-						SCREEN_WIDTH - 10, 10 + (line_num * 20), 1,
-						GRAY
-					);
-					line_num++;
-
-					for (int i=0; i<8; i++) {
-						line_num++;
-						DSK_DirEntry entry = dir.entries[ curr_sector.dir_index + i ];
-						Color clr = GRAY;
-						Rectangle rect = {
-							info_x + 30, 10 + (line_num * 20),
-							50 + MeasureText(entry.filename, 20), 20,
-						};
-
-						bool is_valid = DSK_IsPositionValid(entry.head_pos) && !DSK_PositionsEqual(entry.head_pos, DSK_POSITION_BAM);
-						if (is_valid) {
-							if (CheckCollisionPointRec(GetMousePosition(), rect)) clr = CLR_ACCENT;
 						} else {
 							clr = LIGHTGRAY;
 						}
+					} break;
 
-						// Draw File name
-						DrawPoly((Vector2){ info_x + 40, 19 + (line_num * 20) },
-							4, 5, 0, clr
-						);
-						draw_text(entry.filename,
-							info_x + 60, 10 + (line_num * 20), -1,
-							clr
-						);
-						if (!is_valid) continue;
-
-						// Visualise how many sectors per file are present and healthy
-						Rectangle block_rect = {
-							SCREEN_WIDTH - 10 - 220, 10 + (line_num * 20) + 4,
-							220, 12,
-						};
-						float bwidth = (float) block_rect.width / entry.block_count;
-						if (bwidth < 1.0f) bwidth = 1.0f;
-
-						ANA_SectorInfo binfo = analysis.sectors[DSK_PositionToIndex(entry.head_pos)];
-						int good_blocks = 0;
-						for (int b=0; b<entry.block_count; b++) {
-							DrawRectangle(
-								block_rect.x + (b * bwidth), block_rect.y,
-								ceilf(bwidth), 12, ANA_GetStatusColour(binfo.status)
+					case VIEW_SECTYPE: clr = DSK_Sector_GetTypeColour(info.type); break;
+					case VIEW_FILES: {
+						if (info.type == SECTYPE_DIR) {
+							clr = GOLD;
+						} else {
+							clr = ANA_GetFileColour(dir, info,
+								(hov_info.type != SECTYPE_DIR && hov_dir_index == info.dir_index),
+								(curr_sector.type != SECTYPE_DIR && curr_sector.dir_index == info.dir_index)
 							);
-
-							if (binfo.status == SECSTAT_GOOD
-								|| binfo.status == SECSTAT_PRESENT
-								|| binfo.status == SECSTAT_CONFIRMED
-							) good_blocks++;
-							if (binfo.next_block_index != -1) binfo = analysis.sectors[binfo.next_block_index];
-							else binfo.status = SECSTAT_MISSING;
 						}
-						draw_text(TextFormat("%i/%i", good_blocks, entry.block_count),
-							block_rect.x - 10, 10 + (line_num * 20), 1,
-							(good_blocks < entry.block_count) ? RED:LIME
-						);
+					} break;
+				}
 
-					}
-				} break;
+				DSK_Sector_Draw(dir, pos, dm, clr);
+			}
+		}
 
-				case SECTYPE_PRG:
-				case SECTYPE_REL:
-				case SECTYPE_USR:
-				case SECTYPE_SEQ: {
-					draw_text("File Information:",
-						info_x + 10, 10 + (line_num * 20), -1,
-						BLACK
-					);
-					draw_text("File Health:",
-						SCREEN_WIDTH - 10, 10 + (line_num * 20), 1,
+		// Draw Title
+		draw_text(name, 10, 10, -1, CLR_ACCENT);
+		draw_text(TextFormat("\"%s\"", disk_filename),
+			10, 10 + 30, -1, BLACK
+		);
+
+		// Draw full disk usage & analysis stats
+		const float kb_total = (float) BLOCK_SIZE * MAX_ANALYSIS_ENTRIES / 1024.0f;
+		const float kb_in_use = (float) BLOCK_SIZE * analysis.count_in_use / 1024.0f;
+		const float pc_in_use = (float) analysis.count_in_use / MAX_ANALYSIS_ENTRIES;
+		draw_text(TextFormat("%4.2f KiB / %4.2f KiB (%2.0f%%) in use", kb_in_use, kb_total, pc_in_use * 100.0f),
+			info_x - 10, 10, 1, CLR_ACCENT
+		);
+		const float pc_healthy = (float) analysis.count_healthy / analysis.count_in_use;
+		const float pc_bad = (float) analysis.count_bad / (float) analysis.count_in_use;
+		const int used_width = 200.0f * pc_in_use;
+		DrawRectangle(
+			info_x - 10 - 200, 10 + 30, 200, 20, BLACK
+		);
+		DrawRectangle(
+			info_x - 10 - 200, 10 + 30, used_width, 20, GRAY
+		);
+		DrawRectangle(
+			info_x - 10 - 200, 10 + 30, used_width * pc_healthy, 20, GREEN
+		);
+		DrawRectangle(
+			info_x - 10 - 200 + (200.0f * pc_in_use) * pc_healthy, 10 + 30,
+			used_width * pc_bad, 20, RED
+		);
+		draw_text(TextFormat("%2.0f%% healthy", pc_healthy * 100.0f),
+			info_x - 10, 10 + 60, 1, LIME
+		);
+
+		// Draw Currently selected sector pos & hovered sector pos
+		if (DSK_IsPositionValid(hov)) {
+			draw_text(TextFormat("[% 3i/% 3i]", hov.track, hov.sector),
+				10, SCREEN_HEIGHT - 30 - 30, -1, BLACK
+			);
+		} else {
+			draw_text("[---/---]",
+				10, SCREEN_HEIGHT - 30 - 30, -1, LIGHTGRAY
+			);
+		}
+		draw_text(TextFormat("[% 3i/% 3i]", curr_pos.track, curr_pos.sector),
+			10, SCREEN_HEIGHT - 30, -1, CLR_ACCENT
+		);
+
+		// Draw current view mode name
+		draw_text("View Mode [F2]",
+			info_x - 10, SCREEN_HEIGHT - 30 - 30, 1, BLACK
+		);
+		char *mode_name = "";
+		switch (view_mode) {
+			case VIEW_INVALID: view_mode = VIEW_SECSTAT; // Fall-through
+			case VIEW_SECSTAT: mode_name = "Sector Status"; break;
+			case VIEW_BAM: mode_name = "Missing Sectors"; break;
+			case VIEW_TRANSFER: mode_name = "Transfer Errors"; break;
+			case VIEW_SECTYPE: mode_name = "Sector Type"; break;
+			case VIEW_FILES: mode_name = "File Blocks"; break;
+		}
+		draw_text(mode_name,
+			info_x - 10, SCREEN_HEIGHT - 30, 1, CLR_ACCENT
+		);
+
+
+
+		// Draw Sector Info
+
+		DrawLineEx(
+			(Vector2){ info_x, 10 },
+			(Vector2){ info_x, SCREEN_HEIGHT - 10 },
+			2.0f, BLACK
+		);
+
+		int line_num = 0;
+		draw_text("Current Sector Info:",
+				info_x + 10, 10 + (line_num++ * 20), -1, BLACK
+		);
+
+		DrawLineEx(
+			(Vector2){ info_x + 10, 18 + (line_num * 20) },
+			(Vector2){ SCREEN_WIDTH - 10, 18 + (line_num * 20) },
+			2.0f, BLACK
+		); line_num++;
+
+		draw_text("Sector Type:",
+				info_tab_x - 5, 10 + (line_num * 20), 1, BLACK
+		);
+		draw_text(DSK_Sector_GetTypeName(curr_sector.type),
+				info_tab_x + 5, 10 + (line_num++ * 20), -1, DSK_Sector_GetTypeColour(curr_sector.type)
+		);
+
+		draw_text("Checksum:",
+				info_tab_x - 5, 10 + (line_num * 20), 1, BLACK
+		);
+		if (curr_sector.has_transfer_info) {
+			draw_text(TextFormat("0x%04X - 0x%04X [%s]",
+					curr_checksum, curr_sector.checksum,
+					(curr_checksum == curr_sector.checksum) ? "MATCH":"BREAK"
+				), info_tab_x + 5, 10 + (line_num++ * 20), -1,
+				(curr_checksum == curr_sector.checksum) ? GREEN:RED
+			);
+		} else if (curr_sector.has_data) {
+			draw_text(TextFormat("0x%04X", curr_checksum),
+				info_tab_x + 5, 10 + (line_num++ * 20), -1,
+				GRAY
+			);
+		} else {
+			draw_text("-",
+				info_tab_x + 5, 10 + (line_num++ * 20), -1,
+				GRAY
+			);
+		}
+		line_num++;
+
+		if (curr_sector.has_transfer_info) {
+			draw_text("Disk Error:",
+					info_tab_x - 5, 10 + (line_num * 20), 1, BLACK
+			);
+
+			uint8_t e = curr_sector.disk_err & ~0x80;
+			draw_text(TextFormat("0x%02X (%i)", e, e),
+				info_tab_x + 5, 10 + (line_num++ * 20), -1,
+				ANA_GetDiskErrorColour(curr_sector.disk_err)
+			);
+			draw_text(ANA_GetDiskErrorName(curr_sector.disk_err),
+				info_tab_x + 5, 10 + (line_num++ * 20), -1,
+				ANA_GetDiskErrorColour(curr_sector.disk_err)
+			);
+			line_num++;
+
+			e = curr_sector.parse_err;
+			draw_text("Parse Error:",
+					info_tab_x - 5, 10 + (line_num * 20), 1, BLACK
+			);
+			draw_text(TextFormat("0x%02X (%i)", e, e),
+				info_tab_x + 5, 10 + (line_num++ * 20), -1,
+				ANA_GetParseErrorColour(e)
+			);
+			draw_text(ANA_GetParseErrorName(e),
+				info_tab_x + 5, 10 + (line_num++ * 20), -1,
+				ANA_GetParseErrorColour(e)
+			);
+			line_num++;
+		}
+
+		draw_text("Sector Status:",
+			info_tab_x - 5, 10 + (line_num * 20), 1, BLACK
+		);
+		draw_text(ANA_GetStatusName(curr_sector.status),
+			info_tab_x + 5, 10 + (line_num++ * 20), -1,
+			ANA_GetStatusColour(curr_sector.status)
+		);
+
+		// Draw specific sector info
+		line_num = 12;
+		DrawLineEx(
+			(Vector2){ info_x + 10, 19 + (line_num * 20) },
+			(Vector2){ SCREEN_WIDTH - 10, 19 + (line_num * 20) },
+			2.0f, BLACK
+		); line_num++;
+		switch (curr_sector.type) {
+
+			case SECTYPE_BAM: {
+				draw_text("Full Header Text:",
+					info_x + 10, 10 + (line_num++ * 20), -1,
+					BLACK
+				);
+				line_num++;
+
+				char *desc = DSK_GetDescription(dir);
+				int desclen = strlen(desc);
+				char *str = desc;
+				int prev = 0;
+				for (int i=0; i<desclen; i++) {
+					if (i < desclen-1 && i-prev < 40 && desc[i] != '\n') continue;
+					if (i >= desclen-1 || desc[i] == '\n') i++;
+					int len = i - prev;
+
+					draw_text(TextFormat("%.*s", len, str),
+						info_x + 20, 10 + (line_num++ * 20), -1,
 						GRAY
 					);
-					line_num++;
 
-					// Draw visualisation of all file sectors
-					DSK_DirEntry entry = curr_sector.dir_entry;
+					prev = i;
+					str = desc + i;
+				}
+			} break;
+
+			case SECTYPE_DIR: {
+				draw_text("Directory Files:",
+					info_x + 10, 10 + (line_num * 20), -1,
+					BLACK
+				);
+				draw_text("File Health:",
+					SCREEN_WIDTH - 10, 10 + (line_num * 20), 1,
+					GRAY
+				);
+				line_num++;
+
+				for (int i=0; i<8; i++) {
+					line_num++;
+					DSK_DirEntry entry = dir.entries[ curr_sector.dir_index + i ];
+					Color clr = GRAY;
+					Rectangle rect = {
+						info_x + 30, 10 + (line_num * 20),
+						50 + MeasureText(entry.filename, 20), 20,
+					};
+
+					bool is_valid = DSK_IsPositionValid(entry.head_pos) && !DSK_PositionsEqual(entry.head_pos, DSK_POSITION_BAM);
+					if (is_valid) {
+						if (CheckCollisionPointRec(GetMousePosition(), rect)) clr = CLR_ACCENT;
+					} else {
+						clr = LIGHTGRAY;
+					}
+
+					// Draw File name
+					DrawPoly((Vector2){ info_x + 40, 19 + (line_num * 20) },
+						4, 5, 0, clr
+					);
+					draw_text(entry.filename,
+						info_x + 60, 10 + (line_num * 20), -1,
+						clr
+					);
+					if (!is_valid) continue;
+
+					// Visualise how many sectors per file are present and healthy
+					Rectangle block_rect = {
+						SCREEN_WIDTH - 10 - 220, 10 + (line_num * 20) + 4,
+						220, 12,
+					};
+					float bwidth = (float) block_rect.width / entry.block_count;
+					if (bwidth < 1.0f) bwidth = 1.0f;
+
 					ANA_SectorInfo binfo = analysis.sectors[DSK_PositionToIndex(entry.head_pos)];
 					int good_blocks = 0;
-
-					int grid_w = 4;
-					if (entry.block_count > 16) grid_w = 8;
-					if (entry.block_count > 64) grid_w = 12;
-					if (entry.block_count > 144) grid_w = 16;
-					const int grid_screen_w = 250;
-					const int grid_screen_y = 10 + (line_num + 1) * 20;
-					const int grid_screen_x = SCREEN_WIDTH - 20 - grid_screen_w;
-					int block_s = grid_screen_w / grid_w;
 					for (int b=0; b<entry.block_count; b++) {
-						int grid_x = b % grid_w;
-						int grid_y = b / grid_w;
-
-						if (b == curr_sector.file_index) {
-							DrawRectangle(
-								grid_screen_x + block_s * grid_x - 2, grid_screen_y + (grid_y * block_s) - 2 + 20,
-								block_s + 2, block_s + 2,
-								GOLD
-							);
-						}
 						DrawRectangle(
-							grid_screen_x + block_s * grid_x, grid_screen_y + (grid_y * block_s) + 20,
-							block_s - 2, block_s - 2,
-							ANA_GetStatusColour(binfo.status)
+							block_rect.x + (b * bwidth), block_rect.y,
+							ceilf(bwidth), 12, ANA_GetStatusColour(binfo.status)
 						);
 
 						if (binfo.status == SECSTAT_GOOD
@@ -655,82 +595,139 @@ int main(int argc, char *argv[]) {
 						if (binfo.next_block_index != -1) binfo = analysis.sectors[binfo.next_block_index];
 						else binfo.status = SECSTAT_MISSING;
 					}
-					draw_text(TextFormat("%i/%i good", good_blocks, entry.block_count),
-						SCREEN_WIDTH - 20 - 250, grid_screen_y - 10, -1,
-						(good_blocks < entry.block_count) ? RED : LIME
+					draw_text(TextFormat("%i/%i", good_blocks, entry.block_count),
+						block_rect.x - 10, 10 + (line_num * 20), 1,
+						(good_blocks < entry.block_count) ? RED:LIME
 					);
 
-					// Write file info
-					line_num++;
-					draw_text(curr_sector.dir_entry.filename,
-						info_x + 20, 10 + (line_num++ * 20), -1,
-						DSK_Sector_GetTypeColour(curr_sector.dir_entry.type)
+				}
+			} break;
+
+			case SECTYPE_PRG:
+			case SECTYPE_REL:
+			case SECTYPE_USR:
+			case SECTYPE_SEQ: {
+				draw_text("File Information:",
+					info_x + 10, 10 + (line_num * 20), -1,
+					BLACK
+				);
+				draw_text("File Health:",
+					SCREEN_WIDTH - 10, 10 + (line_num * 20), 1,
+					GRAY
+				);
+				line_num++;
+
+				// Draw visualisation of all file sectors
+				DSK_DirEntry entry = curr_sector.dir_entry;
+				ANA_SectorInfo binfo = analysis.sectors[DSK_PositionToIndex(entry.head_pos)];
+				int good_blocks = 0;
+
+				int grid_w = 4;
+				if (entry.block_count > 16) grid_w = 8;
+				if (entry.block_count > 64) grid_w = 12;
+				if (entry.block_count > 144) grid_w = 16;
+				const int grid_screen_w = 250;
+				const int grid_screen_y = 10 + (line_num + 1) * 20;
+				const int grid_screen_x = SCREEN_WIDTH - 20 - grid_screen_w;
+				int block_s = grid_screen_w / grid_w;
+				for (int b=0; b<entry.block_count; b++) {
+					int grid_x = b % grid_w;
+					int grid_y = b / grid_w;
+
+					if (b == curr_sector.file_index) {
+						DrawRectangle(
+							grid_screen_x + block_s * grid_x - 2, grid_screen_y + (grid_y * block_s) - 2 + 20,
+							block_s + 2, block_s + 2,
+							GOLD
+						);
+					}
+					DrawRectangle(
+						grid_screen_x + block_s * grid_x, grid_screen_y + (grid_y * block_s) + 20,
+						block_s - 2, block_s - 2,
+						ANA_GetStatusColour(binfo.status)
 					);
-					draw_text(TextFormat("Block %i / %i", curr_sector.file_index+1, curr_sector.dir_entry.block_count),
-						info_x + 20, 10 + (line_num++ * 20), -1,
-						BLACK
-					);
-				} break;
 
-				default: break;
-			}
+					if (binfo.status == SECSTAT_GOOD
+						|| binfo.status == SECSTAT_PRESENT
+						|| binfo.status == SECSTAT_CONFIRMED
+					) good_blocks++;
+					if (binfo.next_block_index != -1) binfo = analysis.sectors[binfo.next_block_index];
+					else binfo.status = SECSTAT_MISSING;
+				}
+				draw_text(TextFormat("%i/%i good", good_blocks, entry.block_count),
+					SCREEN_WIDTH - 20 - 250, grid_screen_y - 10, -1,
+					(good_blocks < entry.block_count) ? RED : LIME
+				);
 
-			// Previous Button
-			Color clr = GRAY;
-			if (curr_sector.prev_block_index >= 0) {
-				if (CheckCollisionPointRec(GetMousePosition(), btnrect_previous)) clr = CLR_ACCENT;
-				DrawPoly((Vector2){
-					btnrect_previous.x + btnrect_previous.width/2,
-					btnrect_previous.y + btnrect_previous.height/2
-				}, 3, btnrect_previous.height/2 - 8, 60.0f, clr);
-				DrawRectangleLinesEx(btnrect_previous, 2, clr);
-			}
+				// Write file info
+				line_num++;
+				draw_text(curr_sector.dir_entry.filename,
+					info_x + 20, 10 + (line_num++ * 20), -1,
+					DSK_Sector_GetTypeColour(curr_sector.dir_entry.type)
+				);
+				draw_text(TextFormat("Block %i / %i", curr_sector.file_index+1, curr_sector.dir_entry.block_count),
+					info_x + 20, 10 + (line_num++ * 20), -1,
+					BLACK
+				);
+			} break;
 
-			// Next Button
-			if (curr_sector.next_block_index >= 0) {
-				Color clr = GRAY;
-				if (CheckCollisionPointRec(GetMousePosition(), btnrect_next)) clr = CLR_ACCENT;
-				DrawPoly((Vector2){
-					btnrect_next.x + btnrect_next.width/2,
-					btnrect_next.y + btnrect_next.height/2
-				}, 3, btnrect_next.height/2 - 8, 0.0f, clr);
-				DrawRectangleLinesEx(btnrect_next, 2, clr);
-			}
-
-			// Display Sector contents
-			line_num = 30;
-			DrawLineEx(
-				(Vector2){ info_x + 10, 20 + (line_num * 20) },
-				(Vector2){ SCREEN_WIDTH - 10, 20 + (line_num * 20) },
-				2.0f, BLACK
-			); line_num++;
-
-			draw_text("Sector Contents:",
-				info_x + 10, 10 + (line_num * 20), -1,
-				BLACK
-			);
-			draw_text(hex_mode ? "HEX [F1]":"ASCII [F1]",
-				SCREEN_WIDTH - 10, 10 + (line_num++ * 20), 1,
-				CLR_ACCENT
-			);
-
-			DrawLineEx(
-				(Vector2){ info_x + 10, 18 + (line_num * 20) },
-				(Vector2){ SCREEN_WIDTH - 10, 18 + (line_num * 20) },
-				2.0f, BLACK
-			); line_num++;
-
-			DSK_DrawData(
-				info_x + 20, 10 + (line_num * 20),
-				curr_sector.data, BLOCK_SIZE,
-				hex_mode, true
-			);
-
-			DEBUG_DrawDevInfo();
-
-			EndDrawing();
-			redraw = false;
+			default: break;
 		}
+
+		// Previous Button
+		Color clr = GRAY;
+		if (curr_sector.prev_block_index >= 0) {
+			if (CheckCollisionPointRec(GetMousePosition(), btnrect_previous)) clr = CLR_ACCENT;
+			DrawPoly((Vector2){
+				btnrect_previous.x + btnrect_previous.width/2,
+				btnrect_previous.y + btnrect_previous.height/2
+			}, 3, btnrect_previous.height/2 - 8, 60.0f, clr);
+			DrawRectangleLinesEx(btnrect_previous, 2, clr);
+		}
+
+		// Next Button
+		if (curr_sector.next_block_index >= 0) {
+			Color clr = GRAY;
+			if (CheckCollisionPointRec(GetMousePosition(), btnrect_next)) clr = CLR_ACCENT;
+			DrawPoly((Vector2){
+				btnrect_next.x + btnrect_next.width/2,
+				btnrect_next.y + btnrect_next.height/2
+			}, 3, btnrect_next.height/2 - 8, 0.0f, clr);
+			DrawRectangleLinesEx(btnrect_next, 2, clr);
+		}
+
+		// Display Sector contents
+		line_num = 30;
+		DrawLineEx(
+			(Vector2){ info_x + 10, 20 + (line_num * 20) },
+			(Vector2){ SCREEN_WIDTH - 10, 20 + (line_num * 20) },
+			2.0f, BLACK
+		); line_num++;
+
+		draw_text("Sector Contents:",
+			info_x + 10, 10 + (line_num * 20), -1,
+			BLACK
+		);
+		draw_text(hex_mode ? "HEX [F1]":"ASCII [F1]",
+			SCREEN_WIDTH - 10, 10 + (line_num++ * 20), 1,
+			CLR_ACCENT
+		);
+
+		DrawLineEx(
+			(Vector2){ info_x + 10, 18 + (line_num * 20) },
+			(Vector2){ SCREEN_WIDTH - 10, 18 + (line_num * 20) },
+			2.0f, BLACK
+		); line_num++;
+
+		DSK_DrawData(
+			info_x + 20, 10 + (line_num * 20),
+			curr_sector.data, BLOCK_SIZE,
+			hex_mode, true
+		);
+
+		DEBUG_DrawDevInfo();
+
+		EndDrawing();
 	}
 
 	// Terminate Raylib
@@ -826,6 +823,38 @@ void parse_args(int argc, char *argv[], char **log_filename, char **recon_filena
 		}
 
 	}
+}
+
+bool is_key_held(int keycode) {
+	static int key_held = 0;
+	static int frames_held = 0;
+
+	if (IsKeyDown(keycode)) {
+
+		// Key changed
+		if (key_held != keycode) {
+			key_held = keycode;
+			frames_held = 0;
+			return true;
+		}
+
+		frames_held++;
+
+		if (frames_held > (FRAMERATE/2)) {
+			frames_held -= FRAMERATE/8;
+			return true;
+		} else {
+			return false;
+		}
+	} 
+
+	// Key Released
+	if (key_held == keycode) {
+		key_held = 0;
+		frames_held = 0;
+	}
+
+	return false;
 }
 
 void version() {

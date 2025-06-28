@@ -190,7 +190,7 @@ int NYB_Meta_ReadBlock(FILE *f_meta, NYB_DataBlock *block) {
 	fseek(f_meta, offs_data + (block_index * sizeof(NYB_DataBlock)), SEEK_SET);
 	int read = fread(block, sizeof(NYB_DataBlock), 1, f_meta);
 	if (read != 1) {
-		if (g_verbose_log) printf("Error: Failed to read sector metadata from file; Past end of file; %i\n", read);
+		//if (g_verbose_log) printf("Error: Failed to read sector metadata from file; Past end of file; %i\n", read);
 		return 3;
 	}
 
