@@ -111,18 +111,35 @@ int DSK_File_GetData(FILE *f_disk, DSK_Position pos, void *buf, size_t bufsz) {
 	return 0;
 }
 
-int DSK_File_ParseDirectory(FILE *f_disk, DSK_Directory *dir) {
+int DSK_File_ParseDirectory(FILE *f_disk, DSK_Directory *dir, bool ignore_bam) {
 	if (f_disk == NULL || dir == NULL) return 1;
 
 	// Seek to track 18
 	DSK_File_SeekPosition(f_disk, DSK_POSITION_BAM);
 
 	// Read the BAM
-	char *magic_a;
 	DSK_Position next_pos;
-	fread(&next_pos, sizeof(DSK_Position), 1, f_disk);
-	fread(&magic_a, sizeof(char), 2, f_disk);
-	fread(&dir->bam.entries, sizeof(uint32_t), MAX_TRACKS, f_disk);
+	if (ignore_bam) {
+		next_pos = (DSK_Position){ 18, 1 };
+		for (int t=MIN_TRACKS; t<=MAX_TRACKS; t++) {
+			if (t == 18) {
+				dir->bam[t-1] = (uint32_t) 0x07FFFC11;
+				continue;
+			}
+
+			dir->bam[t-1] = (uint32_t) 0x1FFFFF00 | DSK_Track_GetSectorCount(t);
+		}
+	} else {
+		char magic_a[2];
+		fread(&next_pos, sizeof(DSK_Position), 1, f_disk);
+		fread(&magic_a, sizeof(char), 2, f_disk);
+		
+		// Check format
+		if (!DSK_IsPositionValid(next_pos)) return 2;
+		if (magic_a[0] != 'A' || magic_a[1] != 0x00) return 3;
+
+		fread(&dir->bam, sizeof(uint32_t), MAX_TRACKS, f_disk);
+	}
 
 	// Read the rest into the header string
 	fread(dir->header, sizeof(char), DIR_HEADER_SIZE-1, f_disk);
@@ -194,16 +211,16 @@ int DSK_File_ParseDirectory(FILE *f_disk, DSK_Directory *dir) {
 
 //	---- Debug Printing
 
-void DSK_PrintBAM(DSK_BAM bam) {
+void DSK_PrintBAM(uint32_t bam[MAX_TRACKS]) {
 	printf("\n BAM Contents:\n");
 	printf("---------------------------------\n");
 	for (int i=0; i<MAX_TRACKS; i++) {
-		uint8_t sec_free = bam.entries[i] & 0xFF;
+		uint8_t sec_free = bam[i] & 0xFF;
 		int sec_total = DSK_Track_GetSectorCount(i+1);
 		printf(" Track % 3i: (% 3i/% 3i free) - ", i+1, sec_free, sec_total);
 
 		for (int s=0; s<sec_total; s++) {
-			int is_free = (bam.entries[i] >> (8 + s)) & 1;
+			int is_free = (bam[i] >> (8 + s)) & 1;
 			printf("%c", is_free ? '_' : '#');
 		}
 

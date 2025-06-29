@@ -11,7 +11,7 @@
 #include "../include/nyblog.h"
 
 
-#define VERSION "0.4.2"
+#define VERSION "0.4.3"
 #define FRAMERATE 30		// FPS
 #define SCREEN_WIDTH 1600
 #define SCREEN_HEIGHT 1000
@@ -25,6 +25,7 @@
 
 #define CLR_ACCENT BLUE
 
+static bool g_ignore_error_invalid_bam = false;
 
 // Function Declarations
 void draw_text(const char *text, int x, int y, int align, Color clr);
@@ -121,9 +122,15 @@ int main(int argc, char *argv[]) {
 	}
 
 	DSK_Directory dir;
-	int err = DSK_File_ParseDirectory(f_disk, &dir);
+	int err = DSK_File_ParseDirectory(f_disk, &dir, g_ignore_error_invalid_bam);
 	if (err != 0) {
-		printf("Failed to Parse BAM");
+		printf("Error: Failed to parse track 18\n");
+		if (err == 2 || err == 3) {
+			printf(" ---------------------------------------------------------------\n");
+			printf("  The BAM is invalid! You can try rerunning with -b or --bam to\n");
+			printf("  use a blank BAM instead so you can see the rest of the data.\n");
+			printf(" ---------------------------------------------------------------\n");
+		}
 		usage();
 	}
 
@@ -347,7 +354,13 @@ int main(int argc, char *argv[]) {
 		}
 
 		// Draw Title
-		draw_text(name, 10, 10, -1, CLR_ACCENT);
+		if (g_ignore_error_invalid_bam) {
+			draw_text("<INVALID BAM>",
+				10, 10, -1, RED
+			);
+		} else {
+			draw_text(name, 10, 10, -1, CLR_ACCENT);
+		}
 		draw_text(TextFormat("\"%s\"", disk_filename),
 			10, 10 + 30, -1, BLACK
 		);
@@ -359,7 +372,7 @@ int main(int argc, char *argv[]) {
 		draw_text(TextFormat("%4.2f KiB / %4.2f KiB (%2.0f%%) in use", kb_in_use, kb_total, pc_in_use * 100.0f),
 			info_x - 10, 10, 1, CLR_ACCENT
 		);
-		const float pc_healthy = (float) analysis.count_healthy / analysis.count_in_use;
+		float pc_healthy = (float) analysis.count_healthy / analysis.count_in_use;
 		const float pc_bad = (float) analysis.count_bad / (float) analysis.count_in_use;
 		const int used_width = 200.0f * pc_in_use;
 		DrawRectangle(
@@ -375,7 +388,7 @@ int main(int argc, char *argv[]) {
 			info_x - 10 - 200 + (200.0f * pc_in_use) * pc_healthy, 10 + 30,
 			used_width * pc_bad, 20, RED
 		);
-		draw_text(TextFormat("%2.0f%% healthy", pc_healthy * 100.0f),
+		draw_text(TextFormat("%2.0f%% healthy", floorf(pc_healthy * 100.0f)),
 			info_x - 10, 10 + 60, 1, LIME
 		);
 
@@ -776,6 +789,7 @@ void parse_args(int argc, char *argv[], char **log_filename, char **recon_filena
 			if (len >= 4 && strncmp(curr_arg, "help", len * sizeof(char)) == 0) usage();
 			if (len >= 7 && strncmp(curr_arg, "version", len * sizeof(char)) == 0) version();
 			if (len >= 5 && strncmp(curr_arg, "debug", len * sizeof(char)) == 0) { g_verbose_log = true; continue; };
+			if (len >= 3 && strncmp(curr_arg, "bam", len * sizeof(char)) == 0) { g_ignore_error_invalid_bam = true; continue; };
 
 			printf("Error: Unrecognised option '%s'; Skipping\n", curr_arg);
 
@@ -788,6 +802,7 @@ void parse_args(int argc, char *argv[], char **log_filename, char **recon_filena
 			case 'h': usage(); break;
 			case 'v': version(); break;
 			case 'd': { g_verbose_log = true; } continue;
+			case 'b': { g_ignore_error_invalid_bam = true; } continue;
 
 			case 'l': {
 				if (len > 1) {
@@ -878,6 +893,8 @@ void usage() {
 	printf("  -r <filename>		Include information from an external reconciliation\n");
 	printf("					file. If provided with -l, the log writes the recon\n");
 	printf("					data to this file before loading\n");
+	printf("  -b, --bam			Use a blank template BAM if the disk's BAM is invalid;\n");
+	printf("					bypasses the \"Invalid BAM\" Fatal Error.\n");
 	printf("\n");
 	printf("NOTE: All write operations will completely overwrite the provided file!\n");
 	printf("\n");

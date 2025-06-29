@@ -6,9 +6,6 @@ int ANA_AnalyseDisk(FILE *f_disk, FILE *f_meta, DSK_Directory dir, ANA_DiskInfo 
 
 	analysis->dir = dir;
 
-	// TODO: More initial checks (can we find the BAM? Is it valid? Is the header/directory valid? etc.)
-	// For now we're just assuming that the provided parsed BAM and directories are healthy
-
 	// Initialise analysis struct with basic information for each sector
 	for (int t=MIN_TRACKS; t<=MAX_TRACKS; t++) {
 		for (int s=0; s<21; s++) {
@@ -21,7 +18,7 @@ int ANA_AnalyseDisk(FILE *f_disk, FILE *f_meta, DSK_Directory dir, ANA_DiskInfo 
 				.type = SECTYPE_UNKNOWN,
 				.status = SECSTAT_UNKNOWN,
 			
-				.is_free = (dir.bam.entries[pos.track - 1] >> (8 + pos.sector)) & 0b1,
+				.is_free = (dir.bam[t - 1] >> (8 + s)) & 0b1,
 				.has_data = false,
 				.has_transfer_info = false,
 				.has_directory_info = false,
@@ -207,6 +204,7 @@ int ANA_AnalyseDisk(FILE *f_disk, FILE *f_meta, DSK_Directory dir, ANA_DiskInfo 
 		blank_matches[blank_pattern_count] = 0;
 		blank_patterns[blank_pattern_count] = analysis->sectors[i].data;
 		blank_pattern_count++;
+		if (blank_pattern_count >= 64) break;
 	}
 
 	// ---> Count how many sectors match each pattern

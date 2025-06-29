@@ -42,10 +42,6 @@ typedef struct {
 } DSK_Position;
 
 typedef struct {
-	uint32_t entries[MAX_TRACKS];
-} DSK_BAM;
-
-typedef struct {
 	uint8_t is_corpse : 1;	// Was this file closed correctly last time?
 	uint8_t is_meta : 1;	// Is this my custom type or a 1541 file type?
 	uint8_t __flg_pad : 2;
@@ -57,7 +53,7 @@ typedef struct {
 } DSK_DirEntry;
 
 typedef struct {
-	DSK_BAM bam;
+	uint32_t bam[MAX_TRACKS];
 	char header[DIR_HEADER_SIZE];
 	DSK_DirEntry entries[MAX_DIR_ENTRIES];
 	int num_entries;
@@ -131,13 +127,13 @@ int DSK_File_GetData(FILE *f_disk, DSK_Position pos, void *buf, size_t bufsz);
 //
 //	Returns 0 on success, otherwise:
 //		1 = Received NULL argument pointer
-int DSK_File_ParseDirectory(FILE *f_disk, DSK_Directory *dir);
+int DSK_File_ParseDirectory(FILE *f_disk, DSK_Directory *dir, bool ignore_bam);
 
 //	---- Debug Printing
 
 //	Prints out the contents of the BAM
 //
-void DSK_PrintBAM(DSK_BAM bam);
+void DSK_PrintBAM(uint32_t bam[MAX_TRACKS]);
 
 //	Prints out the contents of the Directory
 //
