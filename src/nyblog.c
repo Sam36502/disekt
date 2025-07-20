@@ -235,7 +235,7 @@ int NYB_Meta_WriteBlock(FILE *f_meta, NYB_DataBlock *block) {
 	return 0;
 }
 
-int NYB_WriteToDiskImage(char *filename, NYB_DataBlock *block_buf, int buf_len) {
+int NYB_WriteToDiskImage(char *filename, NYB_DataBlock *block_buf, int buf_len, bool ignore_errors) {
 	if (block_buf == NULL) return 1;
 
 	FILE * f_disk;
@@ -251,23 +251,29 @@ int NYB_WriteToDiskImage(char *filename, NYB_DataBlock *block_buf, int buf_len) 
 		DSK_Position pos = { block.track_num, block.sector_index };
 		if (g_verbose_log) {
 			printf("  [% 3i/% 3i] ", block.track_num, block.sector_index);
-			if (block.err_code != 0) {
-				printf("Skipping due to disk-read error (code %i)\n", block.err_code);
-				continue;
-			}
-			if (block.checksum != chk) {
-				printf("Skipping due to checksum mismatch (0x%04X =/= 0x%04X)\n", block.checksum, chk);
-				continue;
-			}
-			if (!DSK_IsPositionValid(pos)) {
-				printf("Skipping due to invalid block position\n");
-				continue;
+			if (!ignore_errors) {
+				if (block.err_code != 0) {
+					printf("Skipping due to disk-read error (code %i)\n", block.err_code);
+					continue;
+				}
+				if (block.checksum != chk) {
+					printf("Skipping due to checksum mismatch (0x%04X =/= 0x%04X)\n", block.checksum, chk);
+					continue;
+				}
+				if (!DSK_IsPositionValid(pos)) {
+					printf("Skipping due to invalid block position\n");
+					continue;
+				}
+			} else {
+				printf("Ignoring error...\n");
 			}
 		}
 
-		if (block.err_code != 0) continue;
-		if (block.checksum != chk) continue;
-		if (!DSK_IsPositionValid(pos)) continue;
+		if (!ignore_errors) {
+			if (block.err_code != 0) continue;
+			if (block.checksum != chk) continue;
+			if (!DSK_IsPositionValid(pos)) continue;
+		}
 		DSK_File_SeekPosition(f_disk, pos);
 		fwrite(block.data, sizeof(uint8_t), BLOCK_SIZE, f_disk);
 

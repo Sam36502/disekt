@@ -239,6 +239,28 @@ int ANA_AnalyseDisk(FILE *f_disk, FILE *f_meta, DSK_Directory dir, ANA_DiskInfo 
 		}
 	}
 
+	// Link together orphaned sectors to make reconnecting broken chains easier
+	for (int i=0; i<MAX_ANALYSIS_ENTRIES; i++) {
+		ANA_SectorInfo curr = analysis->sectors[i];
+		if (curr.status != SECSTAT_PRESENT) continue;
+		if (curr.next_block_index >= 0) continue;
+
+		int index = i;
+		int prev = -1;
+		while (index >= 0) {
+			if (prev >= 0) analysis->sectors[index].prev_block_index = prev;
+			
+			DSK_Position pos = {
+				analysis->sectors[index].data[0],
+				analysis->sectors[index].data[1],
+			};
+			int next = DSK_PositionToIndex(pos);
+			if (next >= 0) analysis->sectors[index].next_block_index = next;
+
+			prev = index;
+			index = next;
+		}
+	}
 
 	// Last pass to add confirmed checksums
 	for (int i=0; i<MAX_ANALYSIS_ENTRIES; i++) {

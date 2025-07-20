@@ -88,7 +88,7 @@ int NYB_Meta_WriteBlock(FILE *f_meta, NYB_DataBlock *block);
 //
 //	Returns 0 on success
 //		1 = Input was NULL
-int NYB_WriteToDiskImage(char *filename, NYB_DataBlock *block_buf, int buf_len);
+int NYB_WriteToDiskImage(char *filename, NYB_DataBlock *block_buf, int buf_len, bool ignore_errors);
 
 
 #endif

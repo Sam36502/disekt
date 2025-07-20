@@ -11,7 +11,7 @@
 #include "../include/nyblog.h"
 
 
-#define VERSION "0.4.3"
+#define VERSION "1.3.0"
 #define FRAMERATE 30		// FPS
 #define SCREEN_WIDTH 1600
 #define SCREEN_HEIGHT 1000
@@ -26,6 +26,7 @@
 #define CLR_ACCENT BLUE
 
 static bool g_ignore_error_invalid_bam = false;
+static bool g_ignore_error_image_write = false;
 
 // Function Declarations
 void draw_text(const char *text, int x, int y, int align, Color clr);
@@ -88,7 +89,7 @@ int main(int argc, char *argv[]) {
 			}
 
 			// Write blocks to output disk image
-			int err = NYB_WriteToDiskImage(disk_filename, block_buf, blocks_read);
+			int err = NYB_WriteToDiskImage(disk_filename, block_buf, blocks_read, g_ignore_error_image_write);
 			if (err != 0) {
 				printf("Error: Failed to write to disk image '%s'\n", disk_filename);
 				usage();
@@ -790,6 +791,7 @@ void parse_args(int argc, char *argv[], char **log_filename, char **recon_filena
 			if (len >= 7 && strncmp(curr_arg, "version", len * sizeof(char)) == 0) version();
 			if (len >= 5 && strncmp(curr_arg, "debug", len * sizeof(char)) == 0) { g_verbose_log = true; continue; };
 			if (len >= 3 && strncmp(curr_arg, "bam", len * sizeof(char)) == 0) { g_ignore_error_invalid_bam = true; continue; };
+			if (len >= 5 && strncmp(curr_arg, "force", len * sizeof(char)) == 0) { g_ignore_error_image_write = true; continue; };
 
 			printf("Error: Unrecognised option '%s'; Skipping\n", curr_arg);
 
@@ -803,6 +805,7 @@ void parse_args(int argc, char *argv[], char **log_filename, char **recon_filena
 			case 'v': version(); break;
 			case 'd': { g_verbose_log = true; } continue;
 			case 'b': { g_ignore_error_invalid_bam = true; } continue;
+			case 'f': { g_ignore_error_image_write = true; } continue;
 
 			case 'l': {
 				if (len > 1) {
@@ -888,6 +891,7 @@ void usage() {
 	printf("  -h, --help		Print this usage text and exit\n");
 	printf("  -v, --version		Print the current version number and exit\n");
 	printf("  -d, --debug		Enable more verbose logging for debugging\n");
+	printf("  -f, --force		Ignore transfer errors when writing disk image\n");
 	printf("  -l <filename>		Parse the text log file provided and write its\n");
 	printf("					contents to the given disk file\n");
 	printf("  -r <filename>		Include information from an external reconciliation\n");
