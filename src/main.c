@@ -163,6 +163,9 @@ int main(int argc, char *argv[]) {
 	}
 	if (f_meta != NULL) fclose(f_meta);
 	fclose(f_disk);
+	if (g_verbose_log) printf("\nDisk Statistics:\n - Blocks in use: %i\n - Completed: %i\n - With Issues: %i\n",
+		analysis.count_in_use, analysis.count_healthy, analysis.count_bad
+	);
 
 	//	Main Drawing Loop
 
