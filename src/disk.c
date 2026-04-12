@@ -119,26 +119,34 @@ int DSK_File_ParseDirectory(FILE *f_disk, DSK_Directory *dir, bool ignore_bam) {
 
 	// Read the BAM
 	DSK_Position next_pos;
-	if (ignore_bam) {
-		next_pos = (DSK_Position){ 18, 1 };
-		for (int t=MIN_TRACKS; t<=MAX_TRACKS; t++) {
-			if (t == 18) {
-				dir->bam[t-1] = (uint32_t) 0x07FFFC11;
-				continue;
-			}
+	char version_type[2];
+	fread(&next_pos, sizeof(DSK_Position), 1, f_disk);
+	fread(&version_type, sizeof(char), 2, f_disk);
+	
+	// Check format
+	int error = 0;
+	if (!DSK_IsPositionValid(next_pos)) error = 2;
+	if (version_type[0] != 'A') error = 3;
 
-			dir->bam[t-1] = (uint32_t) 0x1FFFFF00 | DSK_Track_GetSectorCount(t);
-		}
-	} else {
-		char magic_a[2];
-		fread(&next_pos, sizeof(DSK_Position), 1, f_disk);
-		fread(&magic_a, sizeof(char), 2, f_disk);
-		
-		// Check format
-		if (!DSK_IsPositionValid(next_pos)) return 2;
-		if (magic_a[0] != 'A' || magic_a[1] != 0x00) return 3;
-
+	if (error <= 0) {
 		fread(&dir->bam, sizeof(uint32_t), MAX_TRACKS, f_disk);
+	} else {
+		if (!ignore_bam) {
+			return error;
+		} else {
+			next_pos = (DSK_Position){ 18, 1 };
+
+			// If the BAM bitmap is invalid; replace it with an empty one
+			//for (int t=MIN_TRACKS; t<=MAX_TRACKS; t++) {
+			//	if (t == 18) {
+			//		dir->bam[t-1] = (uint32_t) 0x07FFFC11;
+			//		continue;
+			//	}
+
+			//	dir->bam[t-1] = (uint32_t) 0x1FFFFF00 | DSK_Track_GetSectorCount(t);
+			//}
+
+		}
 	}
 
 	// Read the rest into the header string

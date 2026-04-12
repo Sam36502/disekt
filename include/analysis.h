@@ -74,6 +74,7 @@ typedef struct {
 	int count_in_use;
 	int count_healthy;
 	int count_bad;
+	int count_missing;
 } ANA_DiskInfo;
 
 //

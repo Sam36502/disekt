@@ -275,6 +275,11 @@ int ANA_AnalyseDisk(FILE *f_disk, FILE *f_meta, DSK_Directory dir, ANA_DiskInfo 
 int ANA_GatherStats(ANA_DiskInfo *analysis) {
 	if (analysis == NULL) return 1;
 
+	analysis->count_in_use = 0;
+	analysis->count_healthy = 0;
+	analysis->count_missing = 0;
+	analysis->count_bad = 0;
+
 	for (int i=0; i<MAX_ANALYSIS_ENTRIES; i++) {
 		ANA_SectorInfo entry = analysis->sectors[i];
 
@@ -290,8 +295,12 @@ int ANA_GatherStats(ANA_DiskInfo *analysis) {
 			continue;
 		}
 
+		if (entry.status == SECSTAT_MISSING) {
+			analysis->count_missing++;
+			continue;
+		}
+
 		if (entry.status == SECSTAT_BAD
-			|| entry.status == SECSTAT_MISSING
 			|| entry.status == SECSTAT_CORRUPTED
 			|| entry.status == SECSTAT_INVALID
 		) {

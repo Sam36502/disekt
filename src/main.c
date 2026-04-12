@@ -125,7 +125,7 @@ int main(int argc, char *argv[]) {
 	DSK_Directory dir;
 	int err = DSK_File_ParseDirectory(f_disk, &dir, g_ignore_error_invalid_bam);
 	if (err != 0) {
-		printf("Error: Failed to parse track 18\n");
+		printf("Error: Failed to parse track 18; Error-code: %i\n", err);
 		if (err == 2 || err == 3) {
 			printf(" ---------------------------------------------------------------\n");
 			printf("  The BAM is invalid! You can try rerunning with -b or --bam to\n");
@@ -163,8 +163,8 @@ int main(int argc, char *argv[]) {
 	}
 	if (f_meta != NULL) fclose(f_meta);
 	fclose(f_disk);
-	if (g_verbose_log) printf("\nDisk Statistics:\n - Blocks in use: %i\n - Completed: %i\n - With Issues: %i\n",
-		analysis.count_in_use, analysis.count_healthy, analysis.count_bad
+	if (g_verbose_log) printf("\nDisk Statistics:\n - Blocks in use: %i\n -     Completed: %i\n -       Missing: %i\n -   With Issues: %i\n",
+		analysis.count_in_use, analysis.count_healthy, analysis.count_missing, analysis.count_bad
 	);
 
 	//	Main Drawing Loop
@@ -879,7 +879,7 @@ bool is_key_held(int keycode) {
 }
 
 void version() {
-	printf("disekt version %s\n", VERSION);
+	puts("disekt version " VERSION);
 
 	exit(EXIT_SUCCESS);
 }
