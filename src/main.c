@@ -31,7 +31,7 @@ static bool g_ignore_error_image_write = false;
 // Function Declarations
 void draw_text(const char *text, int x, int y, int align, Color clr);
 void draw_stat(int x, int y, int n, int max, Color clr);
-void parse_args(int argc, char *argv[], char **log_filename, char **recon_filename, char **disk_filename);
+void parse_args(int argc, char *argv[], char **log_filename, char **recon_filename, char **disk_filename, char **export_directory);
 bool is_key_held(int keycode);
 void usage();
 void version();
@@ -43,8 +43,9 @@ int main(int argc, char *argv[]) {
 	char *disk_filename = NULL;
 	char *log_filename = NULL;
 	char *recon_filename = NULL;
+	char *export_directory = NULL;
 
-	parse_args(argc, argv, &log_filename, &recon_filename, &disk_filename);
+	parse_args(argc, argv, &log_filename, &recon_filename, &disk_filename, &export_directory);
 	if (disk_filename == NULL) {
 		printf("Error: you must specify a disk file argument\n\n");
 		usage();
@@ -193,6 +194,10 @@ int main(int argc, char *argv[]) {
 		info_x + 20 + 80, 10 + (28 * 20),
 		80, 40,
 	};
+	const Rectangle btnrect_export = {
+		info_x + 10, 10 + (26 * 20) - 5,
+		170, 40,
+	};
 
 	enum {
 		VIEW_SECSTAT, 
@@ -246,6 +251,20 @@ int main(int argc, char *argv[]) {
 				if (CheckCollisionPointRec(GetMousePosition(), btnrect_next)) {
 					curr_pos = analysis.sectors[curr_sector.next_block_index].pos;
 					sector_changed = true;
+				}
+			}
+
+			// Export Button
+			if (export_directory != NULL && (
+					curr_sector.type == SECTYPE_PRG
+					|| curr_sector.type == SECTYPE_SEQ
+					|| curr_sector.type == SECTYPE_USR
+				)
+			) {
+				if (CheckCollisionPointRec(GetMousePosition(), btnrect_export)) {
+					// TODO: Find out which file we're in and export it
+					const char *filename = "<filename>";
+					printf("Exporting file '%s' to '%s/%s'...\n", filename, export_directory, filename);
 				}
 			}
 
@@ -717,6 +736,19 @@ int main(int argc, char *argv[]) {
 			DrawRectangleLinesEx(btnrect_next, 2, clr);
 		}
 
+		// Export Button
+		if (export_directory != NULL && (
+				curr_sector.type == SECTYPE_PRG
+				|| curr_sector.type == SECTYPE_SEQ
+				|| curr_sector.type == SECTYPE_USR
+			)
+		) {
+			Color clr = GRAY;
+			if (CheckCollisionPointRec(GetMousePosition(), btnrect_export)) clr = CLR_ACCENT;
+			draw_text("Export", btnrect_export.x + btnrect_export.width / 2, btnrect_export.y + 10, 0, clr);
+			DrawRectangleLinesEx(btnrect_export, 2, clr);
+		}
+
 		// Display Sector contents
 		line_num = 30;
 		DrawLineEx(
@@ -769,7 +801,7 @@ void draw_text(const char *text, int x, int y, int align, Color clr) {
 
 }
 
-void parse_args(int argc, char *argv[], char **log_filename, char **recon_filename, char **disk_filename) {
+void parse_args(int argc, char *argv[], char **log_filename, char **recon_filename, char **disk_filename, char **export_directory) {
 	if (argc < 2) {
 		printf("Error: at least one argument (disk filename) is required\n\n");
 		usage();
@@ -844,6 +876,21 @@ void parse_args(int argc, char *argv[], char **log_filename, char **recon_filena
 				}
 			} continue;
 
+			case 'e': {
+				if (len > 1) {
+					*export_directory = curr_arg + 1;
+				} else {
+					if (i >= argc-1) {
+						printf("Error: Export-Directory option (-e) requires a path argument\n\n");
+						usage();
+						exit(EXIT_FAILURE);
+					}
+
+					*export_directory = argv[i+1];
+					i++;
+				}
+			} continue;
+
 			default: printf("Error: Unrecognised option '%c'; Skipping\n", o); continue;
 		}
 
@@ -904,6 +951,8 @@ void usage() {
 	printf("  -r <filename>		Include information from an external reconciliation\n");
 	printf("					file. If provided with -l, the log writes the recon\n");
 	printf("					data to this file before loading\n");
+	printf("  -e <directory>	Specify the export directory to use; any files that\n");
+	printf("					are extracted will be written to the provided location\n");
 	printf("  -b, --bam			Use a blank template BAM if the disk's BAM is invalid;\n");
 	printf("					bypasses the \"Invalid BAM\" Fatal Error.\n");
 	printf("\n");
