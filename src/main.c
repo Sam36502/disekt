@@ -363,7 +363,11 @@ int main(int argc, char *argv[]) {
 				10, 10, -1, RED
 			);
 		} else {
-			draw_text(name, 10, 10, -1, CLR_ACCENT);
+			if (strnlen(name, sizeof(char) * 16) <= 0) {
+				draw_text("<NAME BLANK>", 10, 10, -1, GRAY);
+			} else {
+				draw_text(name, 10, 10, -1, CLR_ACCENT);
+			}
 		}
 		draw_text(TextFormat("\"%s\"", disk_filename),
 			10, 10 + 30, -1, BLACK
