@@ -11,7 +11,7 @@
 #include "../include/nyblog.h"
 
 
-#define VERSION "1.3.0"
+#define VERSION "1.4.0"
 #define FRAMERATE 30		// FPS
 #define SCREEN_WIDTH 1600
 #define SCREEN_HEIGHT 1000
@@ -127,7 +127,7 @@ int main(int argc, char *argv[]) {
 	int err = DSK_File_ParseDirectory(f_disk, &dir, g_ignore_error_invalid_bam);
 	if (err != 0) {
 		printf("Error: Failed to parse track 18; Error-code: %i\n", err);
-		if (err == 2 || err == 3) {
+		if (err > 0) {
 			printf(" ---------------------------------------------------------------\n");
 			printf("  The BAM is invalid! You can try rerunning with -b or --bam to\n");
 			printf("  use a blank BAM instead so you can see the rest of the data.\n");
@@ -262,9 +262,45 @@ int main(int argc, char *argv[]) {
 				)
 			) {
 				if (CheckCollisionPointRec(GetMousePosition(), btnrect_export)) {
-					// TODO: Find out which file we're in and export it
-					const char *filename = "<filename>";
-					printf("Exporting file '%s' to '%s/%s'...\n", filename, export_directory, filename);
+					DSK_DirEntry entry = curr_sector.dir_entry;
+					ANA_SectorInfo binfo = analysis.sectors[DSK_PositionToIndex(entry.head_pos)];
+
+					const char *filename = TextFormat("%s/%s.bin", export_directory, entry.filename);
+					printf("Exporting file '%s' to '%s'...\n", entry.filename, filename);
+
+					// Check if the file is complete before exporting
+					int good_blocks = 0;
+					for (int b=0; b<entry.block_count; b++) {
+						if (binfo.status == SECSTAT_GOOD
+							|| binfo.status == SECSTAT_PRESENT
+							|| binfo.status == SECSTAT_CONFIRMED
+						) good_blocks++;
+						if (binfo.next_block_index != -1) binfo = analysis.sectors[binfo.next_block_index];
+						else binfo.status = SECSTAT_MISSING;
+					}
+
+					if (good_blocks < entry.block_count) {
+						printf(">>> Failed to export incomplete file '%s'; Only %i/%i sectors good\n",
+							filename, good_blocks, entry.block_count
+						);
+					} else {
+
+						// Write file info
+						FILE *f_export = fopen(filename, "wb");
+						if (f_export == NULL) {
+							printf(">>> Failed to open file '%s'to export\n", filename);
+						} else {
+
+							for (int b=0; b<entry.block_count; b++) {
+								fwrite(binfo.data + sizeof(uint16_t), sizeof(uint8_t), BLOCK_SIZE - sizeof(uint16_t), f_export);
+								if (binfo.next_block_index >= 0) binfo = analysis.sectors[binfo.next_block_index];
+							}
+							fclose(f_export);
+
+							printf(">>> Export completed '%s'\n", filename);
+						}
+
+					}
 				}
 			}
 

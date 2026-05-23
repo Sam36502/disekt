@@ -125,8 +125,8 @@ int DSK_File_ParseDirectory(FILE *f_disk, DSK_Directory *dir, bool ignore_bam) {
 	
 	// Check format
 	int error = 0;
-	if (!DSK_IsPositionValid(next_pos)) error = 2;
-	if (version_type[0] != 'A') error = 3;
+	if (!DSK_IsPositionValid(next_pos)) error = -1;
+	if (version_type[0] != 'A') error = -2;
 
 	if (error <= 0) {
 		fread(&dir->bam, sizeof(uint32_t), MAX_TRACKS, f_disk);
